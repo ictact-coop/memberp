@@ -1,0 +1,32 @@
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard",
+    "Malgun Gothic", sans-serif;
+  color: #1a1a1a;
+  background: #f7f7f8;
+  /* 모바일 우선(360px)을 기준으로 하고, 바텀 내비게이션 높이만큼 여백을 둔다. */
+  padding-bottom: 64px;
+}
+
+a {
+  color: inherit;
+}
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+}

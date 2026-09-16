@@ -1,12 +1,13 @@
 {
   "name": "memberp",
   "version": "1.0.0",
+  "private": true,
   "description": "공동체IT 조합원들이 참여하는 ERP",
-  "main": "index.js",
-  "directories": {
-    "doc": "docs"
-  },
   "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
     "test": "echo \"Error: no test specified\" && exit 1",
     "prisma:validate": "prisma validate",
     "prisma:generate": "prisma generate",
@@ -17,17 +18,22 @@
     "type": "git",
     "url": "git+https://github.com/ictact-coop/memberp.git"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/ictact-coop/memberp/issues"
-  },
-  "homepage": "https://github.com/ictact-coop/memberp#readme",
   "devDependencies": {
-    "prisma": "^6.19.3"
+    "@next/eslint-plugin-next": "^16.3.5",
+    "@types/node": "^22.20.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "prisma": "^6.19.3",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.0"
   },
   "dependencies": {
-    "@prisma/client": "^6.19.3"
+    "@prisma/client": "^6.19.3",
+    "next": "^16.3.5",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   }
 }
