@@ -1,4 +1,5 @@
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import type { Account } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { generateToken, hashToken } from "./crypto";
@@ -72,6 +73,17 @@ export async function getActiveSession(): Promise<ActiveSession | null> {
 
   const { account, ...rest } = session;
   return { session: rest, account };
+}
+
+// (protected) 레이아웃이 이미 세션 존재와 2단계 인증 완료를 확인했다는 전제로 쓰는
+// 헬퍼 — 그 아래 화면에서 매번 null 체크를 반복하지 않기 위함이다. 로그인 화면처럼
+// "세션이 없을 수도 있다"를 직접 다뤄야 하는 곳은 getActiveSession을 그대로 쓴다.
+export async function requireActiveSession(): Promise<ActiveSession> {
+  const active = await getActiveSession();
+  if (!active) {
+    redirect("/login");
+  }
+  return active;
 }
 
 export async function markSecondFactorVerified(sessionId: string) {

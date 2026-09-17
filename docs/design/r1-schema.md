@@ -68,12 +68,19 @@ erDiagram
 
 `prisma/migrations/20260916095244_add_contribution_activity_need_xor_check/migration.sql`:
 
-- `contributions_activity_or_need_xor`: `activityId`/`needId` 중 정확히 하나만 채워야 한다는
-  v0.1 A06 규칙은 Prisma 스키마 문법(XOR)으로 표현할 수 없어 CHECK 제약으로 추가했다.
 - `contributions_minutes_non_negative`, `activity_assignments_planned_minutes_non_negative`:
   분 단위 시간 필드의 음수 방지.
 
-두 제약 모두 로컬 PostgreSQL 16에 실제 적용하고, 위반 케이스가 실제로 거부되는지 스모크 테스트로 확인했다(§5).
+**정정(2026-09-17, `..._fix_contribution_target_check_and_nullable_description`)**: 처음엔
+`activityId`/`needId` 중 정확히 하나만 채워야 한다는 CHECK 제약(`contributions_activity_or_need_xor`)을
+추가했으나, 실제로 "기여 작성" 화면을 구현하면서 이 제약이 BR-01 "임시저장에는 활동이
+없어도 된다"와 정면으로 충돌한다는 것을 발견했다 — 둘 다 비어 있는 DRAFT조차 저장할 수
+없었다. `contributions_activity_or_need_not_both`로 교체해 "둘 다 동시에 채우는 것"만
+막고, "제출 시점부터는 하나가 있어야 한다"는 애플리케이션(`/api/contributions/save`)에서
+검증하도록 바꿨다. 같은 migration에서 `description`도 `NOT NULL` → nullable로 바꿨다(빈
+초안을 저장할 수 있어야 하므로).
+
+세 제약 모두 로컬 PostgreSQL 16에 실제 적용하고, 위반 케이스가 실제로 거부되는지 확인했다(§5).
 
 ## 5. 검증 방법
 
