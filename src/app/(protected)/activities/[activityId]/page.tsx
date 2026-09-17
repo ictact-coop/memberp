@@ -6,6 +6,7 @@ import {
   ASSIGNMENT_STATUS_LABELS,
   REOPENABLE_ASSIGNMENT_STATUSES,
 } from "@/lib/assignment-labels";
+import { ACTIVITY_STATUS_LABELS, MISSION_LABELS } from "@/lib/activity-labels";
 
 export const dynamic = "force-dynamic";
 
@@ -59,7 +60,9 @@ export default async function ActivityDetailPage({
       <p style={{ color: "#555555" }}>{activity.purpose}</p>
       <dl>
         <dt>상태</dt>
-        <dd>{activity.status}</dd>
+        <dd>{ACTIVITY_STATUS_LABELS[activity.status]}</dd>
+        <dt>미션</dt>
+        <dd>{activity.missions.map((mission) => MISSION_LABELS[mission]).join(", ") || "미지정"}</dd>
         <dt>참여 배정</dt>
         <dd>{activity.assignments.length}건</dd>
       </dl>

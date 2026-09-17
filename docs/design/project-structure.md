@@ -19,7 +19,8 @@ src/
       layout.tsx            세션 확인 + 리다이렉트 + BottomNav
       page.tsx               내 홈
       activities/
-        page.tsx              활동 목록 (FR-04) — Prisma 연동 예시
+        page.tsx              활동 목록 (FR-04) — 활동 운영 역할이면 등록 링크 노출
+        new/page.tsx          활동 등록 (FR-04) — 활동 운영 역할만 접근
         [activityId]/page.tsx 활동 상세 (FR-04/05) — 참여 신청 폼 + 책임자용 수락·거절·종료
       my/
         participation/page.tsx  내 참여 (FR-05) — 신청 목록, 철회, 기록하기 진입
@@ -46,6 +47,8 @@ src/
         save/route.ts               POST: 임시저장/제출 (BR-01, BR-06 멱등성)
         [id]/confirm/route.ts       POST: 담당자 확인 (BR-04/05 버전 대체 처리)
         [id]/request-revision/route.ts  POST: 보완 요청
+      activities/
+        create/route.ts             POST: 활동 등록(항상 PLANNING 상태로 시작)
       activity-assignments/
         apply/route.ts              POST: 참여 신청(PROPOSED 생성, 중복 신청 방지)
         [id]/accept/route.ts        POST: 책임자가 수락 → ACCEPTED
@@ -67,6 +70,7 @@ src/
     prisma.ts            PrismaClient 싱글턴
     display-id.ts        ACT-0001 등 표시번호를 원자적으로 채번(DisplaySequence upsert)
     contribution-labels.ts  기여 유형·유무급·상태 enum의 한글 라벨(화면 3곳 이상 공유)
+    activity-labels.ts   ActivityManagementType·Mission·Visibility·ActivityStatus 한글 라벨
     role-labels.ts       PermissionRole·ScopeType enum의 한글 라벨
     assignment-labels.ts AssignmentStatus 한글 라벨, 역할 선택지, 재신청 가능 상태 목록
     auth/
@@ -108,6 +112,31 @@ accept-invitation?token=…      login (이메일 입력)
 - CSRF는 세션 쿠키의 `SameSite=Lax`에 기대고 있다 — 별도 CSRF 토큰은 아직 없다.
 - 로그인 요청(`/api/auth/login`)에 속도 제한이 없다 — Redis 등 배경작업 인프라가
   아직 없어서다(ADR-0001). 대량 스팸 발송 위험은 남아 있는 과제로 남겨둔다.
+
+## 활동 등록 화면 (FR-04 구현)
+
+`/activities/new`에서 활동을 만든다. 여태 `prisma/seed-sample-data.ts` 스크립트나 DB
+직접 조작으로만 생기던 활동을, 이제 화면에서 만들 수 있다.
+
+- **접근 권한**: `ACTIVITY_OPERATIONS_ROLES`(ACTIVITY_MANAGER/DOMAIN_OPERATOR/
+  SECRETARIAT/BOARD/SYSTEM_ADMIN)를 가진 계정만 들어올 수 있다 — `/review` 접근 판정에
+  쓰던 역할 목록을 그대로 재사용했다(같은 역할이 "활동을 운영·확인할 자격"이라는
+  동일한 의미이기 때문에, 별도 상수를 새로 만들지 않고 `canAccessReviewInbox`가 쓰던
+  비공개 상수를 `ACTIVITY_OPERATIONS_ROLES`라는 이름으로 내보내는 것으로 바꿨다).
+  화면(`requireRole`)과 API(`/api/activities/create`, `hasAnyRole` 직접 확인) 양쪽에서
+  같은 역할을 다시 확인한다 — 폼을 거치지 않고 바로 POST가 올 수 있어서다.
+- **필수 입력(v0.1 A01)**: 활동명·목적·유형(사업/조직활동)·미션(1개 이상)·책임자 계정을
+  모두 채워야 한다. 하나라도 비었거나 미션을 하나도 안 고르면 `error=invalid`로
+  되돌아간다. 책임자로 고른 계정이 실존하지 않으면(레이스 등) `error=invalid_manager`.
+  종료 예정일이 시작 예정일보다 빠르면 `error=invalid_dates` — 둘 다 선택 입력이라
+  하나만 채워도 저장은 되고, 둘 다 있을 때만 순서를 검사한다.
+- **상태는 폼 입력이 아니다**: 새 활동은 항상 `PLANNING`(기획)으로 시작한다 — 승인
+  절차를 건너뛰고 곧바로 진행·완료 상태로 등록하는 것을 막기 위한 의도적 제약이라,
+  상태 선택 UI 자체를 만들지 않았다.
+- 표시번호는 `ACT-0001`처럼 `nextDisplayId`로 채번한다(기여의 `CTB-`, 배정과 같은 방식).
+- 공개 범위(visibility)는 기본값 `TEAM`(담당팀만)이며 화면에서 바꿀 수 있다.
+- `/activities` 목록 화면은 `ACTIVITY_OPERATIONS_ROLES`를 가진 계정에게만 "+ 새 활동
+  등록" 링크를 보여준다 — 일반 조합원 화면에는 링크 자체가 없다.
 
 ## 참여 신청·배치 흐름 (FR-05 구현)
 
@@ -184,10 +213,10 @@ accept-invitation?token=…      login (이메일 입력)
 
 `/review`는 순수 역할 게이트를 쓰지 않고 `canAccessReviewInbox`라는 별도 함수를 쓴다 —
 역할이 있거나(ACTIVITY_MANAGER 등) **또는** 실제로 어떤 활동·수요의 담당자로 지정되어
-있으면 통과한다. 활동을 만드는 화면이 아직 없어(FR-04 관리자 UI는 다음 작업), 지금은
-활동 담당자 지정이 별도 역할 부여 없이 DB에 직접 이뤄질 수 있다 — 순수 역할 게이트를
-썼다면 이런 "역할은 없지만 실제로 담당자로 지정된" 계정이 자기 활동의 제출물조차
-확인할 수 없는 상황이 생겼을 것이다. 실제로 이 세 조합(역할 없음+담당 없음 → 차단,
+있으면 통과한다. 활동 등록 화면(`/activities/new`)이 생긴 지금도 책임자는 "활동 운영
+역할을 가진 계정 중에서" 고르는 게 아니라 아무 ACTIVE 계정이나 지정할 수 있다 — 순수
+역할 게이트를 썼다면 이런 "역할은 없지만 실제로 담당자로 지정된" 계정이 자기 활동의
+제출물조차 확인할 수 없는 상황이 생겼을 것이다. 실제로 이 세 조합(역할 없음+담당 없음 → 차단,
 역할 없음+담당 있음 → 통과, 담당 있어도 역할 없으면 `/admin`은 여전히 차단)을 모두
 확인했다(§검증 이력).
 
@@ -246,8 +275,9 @@ SECRETARIAT·SYSTEM_ADMIN이 화면에서 이메일과(선택적으로) 역할�
 - **배정 IN_PROGRESS 전환**: `AssignmentStatus`에 있는 상태지만, 수락(ACCEPTED)과
   구분해 화면에서 따로 눌러 바꿀 방법이 없다 — 지금은 수락되면 실제로 기록을 남길
   수 있으므로 이 구분이 급하지 않다고 판단했다.
-- **활동 등록 화면**: 활동 자체를 만드는 화면이 없어(참여 신청을 받을 대상), 지금은
-  `prisma/seed-sample-data.ts` 같은 스크립트나 DB 직접 조작으로만 활동이 생긴다.
+- **활동 상위 구조·예산**: 활동 등록 화면에 상위 활동(parentActivityId) 지정이나
+  예산(budgetBaseline) 입력이 없다 — 등록 자체가 이번에 처음 생겨 R1 FR-04 최소
+  검수 기준(담당자·유형·기간·공개범위·상태)만 우선 채웠다.
 - **첨부파일 업로드**: 기여 증빙은 "선택"이라 스키마에는 있지만, S3/MinIO 연동
   (ADR-0001)이 없어 업로드 UI 자체를 만들지 않았다.
 - **알림 발송(BullMQ/Redis), 로그인 요청 속도 제한**: 백그라운드 작업 큐가 아직 없다.
@@ -319,3 +349,12 @@ npm run dev                  # http://localhost:3000
     스스로 철회하면 CANCELLED로 바뀜; 다른 사람의 신청을 철회하려는 시도와 이미
     ACCEPTED인 신청을 본인이 철회하려는 시도는 모두 차단됨(수락 후에는 책임자만
     종료 가능); 책임자가 종료 처리하면 ENDED로 바뀌고 endDate가 채워짐
+  - 활동 등록 화면(`/activities/new`): 활동 운영 역할이 없는 일반 계정은 화면 접근 자체가
+    `/forbidden`으로 막힘; SYSTEM_ADMIN 계정은 접근 가능하고 목록 화면에도 등록 링크가
+    보임(일반 계정에는 링크 자체가 없음을 확인); 미션을 하나도 선택하지 않으면
+    `error=invalid`로 거부; 종료 예정일을 시작 예정일보다 이르게 넣으면
+    `error=invalid_dates`로 거부; 두 미션을 선택해 등록하면 `ACT-0001` 표시번호가
+    채번되고 상태가 항상 `PLANNING`으로 시작하며 작성자가 `createdBy`에 기록됨; 새로
+    만든 활동의 상세 화면에 한글 라벨(기획/소비자의 성장/공유 자원 확대 등)이 정상
+    출력됨; 그렇게 만든 활동에 다른 계정이 실제로 참여 신청(PROPOSED)까지 성공해,
+    활동 등록이 기존 참여 신청·배치 기능과 끊김 없이 이어짐을 확인

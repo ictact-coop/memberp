@@ -45,12 +45,9 @@ export async function requireRole(roles: PermissionRole[]) {
   return active;
 }
 
-// 담당자 확인함(/review)은 두 가지 방식 중 하나로 접근 자격을 얻는다:
-// 1) 역할 부여(ACTIVITY_MANAGER 등)를 받았거나
-// 2) 실제로 활동·수요에 담당자로 지정되어 있거나(Activity.managerAccountId 등)
-// 활동 생성 화면이 아직 없어 담당자 지정이 별도 역할 부여 없이 이뤄질 수 있으므로,
-// 역할만으로 제한하면 실제 담당자가 자기 활동을 확인하지 못하는 상황이 생긴다.
-const REVIEW_ROLES: PermissionRole[] = [
+// 활동을 운영·확인할 자격이 있다고 보는 역할 — 담당자 확인함(/review) 접근과
+// 활동 등록(/activities/new) 둘 다 이 역할로 판단한다.
+export const ACTIVITY_OPERATIONS_ROLES: PermissionRole[] = [
   "ACTIVITY_MANAGER",
   "DOMAIN_OPERATOR",
   "SECRETARIAT",
@@ -58,9 +55,14 @@ const REVIEW_ROLES: PermissionRole[] = [
   "SYSTEM_ADMIN",
 ];
 
+// 담당자 확인함(/review)은 두 가지 방식 중 하나로 접근 자격을 얻는다:
+// 1) 역할 부여(ACTIVITY_MANAGER 등)를 받았거나
+// 2) 실제로 활동·수요에 담당자로 지정되어 있거나(Activity.managerAccountId 등)
+// 활동을 역할 부여 없이도 만들 수 있게(예: 부트스트랩 스크립트) 되어 있어, 역할만으로
+// 제한하면 실제 담당자가 자기 활동을 확인하지 못하는 상황이 생긴다.
 export async function canAccessReviewInbox(accountId: string): Promise<boolean> {
   const [hasElevatedRole, managesActivity, assignedNeed] = await Promise.all([
-    hasAnyRole(accountId, REVIEW_ROLES),
+    hasAnyRole(accountId, ACTIVITY_OPERATIONS_ROLES),
     prisma.activity.findFirst({ where: { managerAccountId: accountId }, select: { id: true } }),
     prisma.need.findFirst({ where: { assigneeAccountId: accountId }, select: { id: true } }),
   ]);
