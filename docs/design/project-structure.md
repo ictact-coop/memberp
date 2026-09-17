@@ -28,7 +28,10 @@ src/
         contributions/page.tsx  내 기여 (FR-07) — 실제 목록, 이어 작성·정정 요청 링크
         contributions/new/page.tsx  기여 작성 = "기록하기" (FR-06) — 새로 작성/이어 작성/정정을 한 화면에서 처리
         profile/page.tsx   내 정보 (FR-03) — 로그인 이메일·로그아웃, 연락처·관심 분야 수정
-      needs/page.tsx       상담·수요 = "우리 조합" (FR-08)
+      needs/
+        page.tsx              상담·수요 목록 (FR-08) — 로그인한 누구나 조회
+        new/page.tsx          상담·수요 접수 (FR-08) — 활동 운영 역할만 접근
+        [needId]/page.tsx     상담·수요 상세 — 상태 관리는 담당자만
       review/page.tsx      담당자 확인함 (FR-07) — 실제 확인·보완요청 동작
       admin/
         page.tsx              관리자 설정 허브 — 하위 도구로 이동하는 링크 모음
@@ -62,6 +65,10 @@ src/
         [id]/end/route.ts           POST: 책임자가 종료 처리 → ENDED
         [id]/withdraw/route.ts      POST: 본인이 철회(PROPOSED일 때만) → CANCELLED
         [id]/start/route.ts         POST: 본인이 진행 시작(ACCEPTED일 때만) → IN_PROGRESS
+      needs/
+        create/route.ts             POST: 상담·수요 접수(항상 RECEIVED 상태로 시작)
+        [needId]/
+          transition/route.ts       POST: 상담·수요 상태 전이(확인·제안·사업화·보류·재개·종결)
       admin/
         roles/
           grant/route.ts             POST: 역할 부여
@@ -80,6 +87,8 @@ src/
     subject-labels.ts     SubjectStatus(활성/휴면/종료/확인필요) 한글 라벨
     activity-labels.ts   ActivityManagementType·Mission·Visibility·ActivityStatus 한글 라벨
     activity-status.ts   활동 상태 전이표(ACTIVITY_TRANSITIONS), 전이 동작 한글 라벨
+    need-labels.ts       NeedChannel·NeedStatus·NeedCloseType 한글 라벨
+    need-status.ts       상담·수요 상태 전이표(NEED_TRANSITIONS), 전이 동작 한글 라벨
     role-labels.ts       PermissionRole·ScopeType enum의 한글 라벨
     assignment-labels.ts AssignmentStatus 한글 라벨, 역할 선택지, 재신청 가능 상태 목록
     auth/
@@ -328,6 +337,67 @@ v0.1 §3.2의 활동 상태표를 그대로 코드화했다: 기획→승인대�
   남기려면 반드시 주체가 있어야 하기 때문이다(원본 구상인 "사무국이 나중에 확인 후
   연결"의 단순화 버전).
 
+## 우리 조합 = 상담·수요 화면 (`/needs`, FR-08 구현)
+
+v0.1 §3.1 "필요·기회" 상태전이 다이어그램을 활동 상태 전이와 같은 방식으로
+코드화했다(`src/lib/need-status.ts`). 이전까지 `ScreenPlaceholder`였던 화면을
+실제 접수·목록·상태 관리로 채운다.
+
+```mermaid
+stateDiagram-v2
+  [*] --> 접수(RECEIVED)
+  접수(RECEIVED) --> 확인중(REVIEWING): review
+  확인중(REVIEWING) --> 제안중(PROPOSING): propose
+  확인중(REVIEWING) --> 종결(CLOSED): close
+  제안중(PROPOSING) --> 사업화(CONVERTED): convert
+  제안중(PROPOSING) --> 보류(ON_HOLD): hold
+  제안중(PROPOSING) --> 종결(CLOSED): close
+  보류(ON_HOLD) --> 확인중(REVIEWING): resume
+  보류(ON_HOLD) --> 종결(CLOSED): close
+  사업화(CONVERTED) --> [*]
+  종결(CLOSED) --> [*]
+```
+
+- **접근 권한**: 목록(`/needs`)은 활동 목록과 같은 원칙 — 로그인한 누구나 볼 수 있고,
+  "+ 새 상담·수요 접수" 링크와 `/needs/new`는 `ACTIVITY_OPERATIONS_ROLES`를 가진
+  계정만 볼 수 있다. 상세 화면은 누구나 볼 수 있지만, 상태 전이(`상태 관리` 절)는
+  그 상담·수요의 `assigneeAccountId`(담당자)만 할 수 있다 — 활동 상태 전이와 똑같은
+  원칙("이 화면에 들어올 수 있는가"와 "이 항목을 처리할 수 있는가"를 분리)이다.
+- **전이별 필수 조건을 v0.1 표 그대로 구현**: `NEED_TRANSITIONS`(`need-status.ts`)에
+  전이마다 "어느 상태에서 가능한지"·"사유가 필수인지"를 선언하고, 전이 고유의
+  추가 조건은 API에서 직접 확인한다.
+  - **접수→확인중(`review`)**: "담당·다음 행동일"이 조건이다. 담당자는 접수 시 이미
+    필수 입력이므로, 다음 행동일(`nextActionDate`)만 레코드에 없으면 이 전이에서
+    같이 받는다.
+  - **확인중→제안중(`propose`)**: "문제·대상·대안"이 조건이다. 문제(`content`)는
+    접수 시 이미 필수이므로, 대상(`beneficiarySubjectId`)·대안(`nextAction`)만 레코드에
+    없으면 이 전이에서 같이 받는다. 한 번 채워지면 다음에 이 상태를 다시 거쳐도
+    다시 물어보지 않는다(보류→재개 후 재상신에서 확인).
+  - **제안중→사업화(`convert`)**: "실행 합의·활동ID"가 조건이다. 활동을 선택하면
+    `NeedActivityLink`(linkType `PRIMARY`)를 만든다. v0.1의 "동일 필요·활동·연결유형은
+    유일하다; 중복 생성 방지" 규칙은 스키마의 `@@unique([needId, activityId, linkType])`
+    제약과 P2002 캐치(기여 제출 멱등성과 같은 패턴)로 이중 보장한다.
+  - **제안중→보류(`hold`)**: "사유·재검토일"이 조건이다. 활동의 보류와 같은 방식으로
+    사유는 필수, 재검토일은 선택이며 둘 다 `AuditLog`에 남는다. 다이어그램상
+    보류는 제안중에서만 빠질 수 있다(확인중→보류는 없음) — 표의 "진행→보류"를
+    다이어그램 기준으로 해석한 것이다.
+  - **보류→확인중(`resume`)**: 활동의 재개(직전 상태로 복귀)와 달리, 여기는 다이어그램이
+    복귀 지점을 확인중 하나로 고정해뒀으므로 별도의 이력 조회 없이 바로
+    `REVIEWING`으로 되돌린다.
+  - **확인중·제안중·보류→종결(`close`)**: "종결유형·사유"가 조건이다. 스키마에 이미
+    있던 `closeType`(자체 해결/타 기관 연계/진행 안 됨/철회/사업화됨)·`closeReason`
+    필드를 이 시점에 처음 채운다.
+- **"사업 책임자"를 담당자로 단순화**: v0.1 표는 사업화(`convert`) 전이의 수행자를
+  "사업 책임자"라고 다르게 부르지만, 이 프로젝트에는 상담·수요 담당자와 활동
+  책임자를 자동으로 연결할 권한 이양 규칙이 없다. 다른 모든 전이와 마찬가지로
+  상담·수요의 `assigneeAccountId` 본인만 사업화 전이도 처리하도록 단순화했다.
+- **관련 기여·연결된 활동 표시**: 상세 화면은 이 상담·수요로 남겨진 기여 건수와,
+  사업화로 만들어진 `NeedActivityLink`(연결된 활동 링크)를 보여준다.
+- **정직하게 남겨둔 것**: 종결 후 "새 요청은 원본을 참조하는 새 필요로 만든다"는
+  v0.1의 요구를 아직 구현하지 않았다 — 원본을 가리키는 필드가 스키마에 없어서다.
+  지금은 종결된 상담을 참고해 완전히 새로운 상담을 접수해야 한다. 접수 후 내용
+  수정 화면도 없다(활동 수정 화면과 달리 아직 안 만듦).
+
 ## 역할 기반 접근 제어 (`src/lib/auth/roles.ts`)
 
 `PermissionGrant`(사람별 역할·기간)를 근거로 두 가지를 제공한다.
@@ -422,11 +492,15 @@ SECRETARIAT·SYSTEM_ADMIN이 화면에서 이메일과(선택적으로) 역할�
   "종료 후 수정은 정정 이력으로"). 그런데 그 정정 이력 절차 자체는 아직 없다 —
   기여(Contribution)의 `revisionOfId`처럼 새 버전을 만들고 원본을 대체하는 방식이
   후보이지만 아직 구현하지 않았다. 지금은 "막기만" 한다.
-- **상태 전이·수정 감사 이력 조회 화면**: 활동 상태 전이·정보 수정, 내 정보(Subject)
-  수정 모두 `AuditLog`에 남지만, 그 이력을 사람이 보는 화면은 아직 없다(DB에는
-  남아 있음). '준비 승인'의 결재 권한자를 책임자와 분리하는 위임 규정도 없어, 지금은
-  책임자 본인이 승인까지 처리한다. 종료 시 v0.1이 요구하는 "열린 청구·지급 확인"도
-  계약·지급 테이블이 없어 검증하지 않는다.
+- **상태 전이·수정 감사 이력 조회 화면**: 활동 상태 전이·정보 수정, 상담·수요 상태
+  전이, 내 정보(Subject) 수정 모두 `AuditLog`에 남지만, 그 이력을 사람이 보는 화면은
+  아직 없다(DB에는 남아 있음). '준비 승인'의 결재 권한자를 책임자와 분리하는 위임
+  규정도 없어, 지금은 책임자 본인이 승인까지 처리한다. 종료 시 v0.1이 요구하는
+  "열린 청구·지급 확인"도 계약·지급 테이블이 없어 검증하지 않는다.
+- **상담·수요 수정·종결 후 후속 필요 생성**: 접수 후 제목·내용 등을 고치는 화면이
+  없다(활동은 수정 화면이 있지만 상담·수요는 아직 없음). 종결 후 "새 요청은 원본을
+  참조하는 새 필요로 만든다"(v0.1)는 요구도 원본 참조 필드가 스키마에 없어 구현하지
+  않았다 — 지금은 완전히 새로운 상담으로 접수해야 한다.
 - **지역·전문영역 분류 체계**: `Classification` 모델은 스키마에 있지만 아직 아무
   화면도 쓰지 않는다 — 내 정보 화면의 지역·전문영역/관심은 정식 분류표 없이 자유
   텍스트(쉼표 목록)로 받는다. 분류 관리 화면이 생기면 선택형으로 바꿀 대상이다.
@@ -556,3 +630,21 @@ npm run dev                  # http://localhost:3000
     명시적으로 저장됨(필드 자체가 사라지지 않음)을 확인; 모든 변경이
     `AuditLog`(entityType `"Subject"`, action `UPDATE`)에 변경 전·후 값으로 남는
     것을 직접 조회해 확인
+  - 우리 조합 = 상담·수요 화면(`/needs`): 활동 운영 역할이 없는 계정은 `/needs/new`
+    접근이 `/forbidden`으로 막히고 목록에도 접수 링크가 안 보임(역할이 있으면 둘 다
+    보임)을 확인; 필수 필드 누락 시 `error=invalid`로 접수 거부; 담당자가 아닌 계정의
+    상태 전이 시도는 `forbidden`으로 차단; 접수(RECEIVED) 상태에서 다음 행동일 없이
+    확인 시작을 시도하면 `missing_next_action_date`로 거부, 채우면 확인중(REVIEWING)
+    으로 전이; 확인중에서 대상·다음 행동 없이 제안 전환을 시도하면
+    `missing_proposal_fields`로 거부(존재하지 않는 대상 ID는 `invalid_beneficiary`로
+    별도 거부), 채우면 제안중(PROPOSING)으로 전이하고 한 번 채워진 값은 이후
+    보류→재개로 되돌아와 다시 거쳐도 재입력을 요구하지 않음을 확인; 제안중에서
+    활동을 선택해 사업화(convert)하면 `NeedActivityLink`(PRIMARY)가 생성되고 상태가
+    사업화(CONVERTED)로 바뀌며, 사업화 이후에는 상태 관리 UI 자체가 사라지고 어떤
+    전이도 거부됨을 확인; 제안중에서 사유·재검토일을 채워 보류(ON_HOLD)한 뒤
+    재개(resume)하면 다이어그램대로 정확히 확인중(REVIEWING)으로 돌아옴을 확인;
+    확인중·제안중·보류 각 상태에서 종결유형·사유 없이 종결을 시도하면 `reason_required`
+    로 거부, 채우면 종결(CLOSED)로 바뀌고 `closeType`·`closeReason`이 채워짐을 확인;
+    사유가 필요한 전이(보류·종결)와 상태 전이 전체가 `AuditLog`(entityType `"Need"`,
+    action `STATUS_CHANGE`)에 beforeData/afterData/reason으로 정확히 남는 것을
+    직접 조회해 확인
