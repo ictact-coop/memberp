@@ -23,10 +23,10 @@ function todayInputValue(date: Date): string {
 export default async function NewContributionPage({
   searchParams,
 }: {
-  searchParams: Promise<{ id?: string; reviseOf?: string; error?: string }>;
+  searchParams: Promise<{ id?: string; reviseOf?: string; activityId?: string; error?: string }>;
 }) {
   const active = await requireActiveSession();
-  const { id, reviseOf, error } = await searchParams;
+  const { id, reviseOf, activityId, error } = await searchParams;
 
   if (!active.account.subjectId) {
     return (
@@ -43,7 +43,8 @@ export default async function NewContributionPage({
     contributionId: null as string | null,
     submissionKey: generateToken(),
     revisionOfId: null as string | null,
-    target: "",
+    // /my/participation의 "이 활동으로 기록하기" 링크에서 넘어온 경우 미리 선택해둔다.
+    target: activityId ? `activity:${activityId}` : "",
     performedDate: todayInputValue(new Date()),
     contributionType: "TIME",
     minutes: "",

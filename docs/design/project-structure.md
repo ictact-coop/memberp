@@ -20,9 +20,9 @@ src/
       page.tsx               내 홈
       activities/
         page.tsx              활동 목록 (FR-04) — Prisma 연동 예시
-        [activityId]/page.tsx 활동 상세 (FR-04/05)
+        [activityId]/page.tsx 활동 상세 (FR-04/05) — 참여 신청 폼 + 책임자용 수락·거절·종료
       my/
-        participation/page.tsx  내 참여 (FR-05)
+        participation/page.tsx  내 참여 (FR-05) — 신청 목록, 철회, 기록하기 진입
         contributions/page.tsx  내 기여 (FR-07) — 실제 목록, 이어 작성·정정 요청 링크
         contributions/new/page.tsx  기여 작성 = "기록하기" (FR-06) — 새로 작성/이어 작성/정정을 한 화면에서 처리
         profile/page.tsx   내 정보 (FR-03) — 로그인 이메일 표시·로그아웃 버튼은 실제 동작
@@ -46,6 +46,12 @@ src/
         save/route.ts               POST: 임시저장/제출 (BR-01, BR-06 멱등성)
         [id]/confirm/route.ts       POST: 담당자 확인 (BR-04/05 버전 대체 처리)
         [id]/request-revision/route.ts  POST: 보완 요청
+      activity-assignments/
+        apply/route.ts              POST: 참여 신청(PROPOSED 생성, 중복 신청 방지)
+        [id]/accept/route.ts        POST: 책임자가 수락 → ACCEPTED
+        [id]/reject/route.ts        POST: 책임자가 거절 → CANCELLED
+        [id]/end/route.ts           POST: 책임자가 종료 처리 → ENDED
+        [id]/withdraw/route.ts      POST: 본인이 철회(PROPOSED일 때만) → CANCELLED
       admin/
         roles/
           grant/route.ts             POST: 역할 부여
@@ -62,6 +68,7 @@ src/
     display-id.ts        ACT-0001 등 표시번호를 원자적으로 채번(DisplaySequence upsert)
     contribution-labels.ts  기여 유형·유무급·상태 enum의 한글 라벨(화면 3곳 이상 공유)
     role-labels.ts       PermissionRole·ScopeType enum의 한글 라벨
+    assignment-labels.ts AssignmentStatus 한글 라벨, 역할 선택지, 재신청 가능 상태 목록
     auth/
       crypto.ts            토큰 생성·해시, TOTP 비밀키 암호화(AES-256-GCM), 복구코드 생성
       config.ts            토큰 TTL·세션 기간·TOTP 강제 대상 역할·getBaseUrl() 등
@@ -101,6 +108,34 @@ accept-invitation?token=…      login (이메일 입력)
 - CSRF는 세션 쿠키의 `SameSite=Lax`에 기대고 있다 — 별도 CSRF 토큰은 아직 없다.
 - 로그인 요청(`/api/auth/login`)에 속도 제한이 없다 — Redis 등 배경작업 인프라가
   아직 없어서다(ADR-0001). 대량 스팸 발송 위험은 남아 있는 과제로 남겨둔다.
+
+## 참여 신청·배치 흐름 (FR-05 구현)
+
+```
+[조합원]                                [활동 책임자]
+/activities/[id]                        /activities/[id]
+  └ 참여 신청(PROPOSED) ─────────────────→  ├ 수락 → ACCEPTED (startDate 채움)
+                                           └ 거절 → CANCELLED
+/my/participation
+  └ 신청 철회(PROPOSED일 때만) → CANCELLED   활동 책임자만 종료 처리 가능:
+                                           ACCEPTED/IN_PROGRESS → ENDED (endDate 채움)
+```
+
+- **배치는 실적이 아니다(BR-02)**: `ActivityAssignment`는 "누가 참여하기로 했는가"만
+  기록한다. 실제 기여는 별도로 `/my/contributions/new`에서 작성해야 한다 — 수락됐다고
+  자동으로 기여가 생기지 않는다. `/my/participation`과 활동 상세 화면 모두 수락된
+  참여 옆에 "이 활동으로 기록하기" 링크만 둔다.
+- **중복 신청 방지**: 이미 PROPOSED·ACCEPTED·IN_PROGRESS 상태의 신청이 있으면 같은
+  활동에 다시 신청할 수 없다. 거절(CANCELLED)되거나 종료(ENDED)된 뒤에는 다시 신청할
+  수 있다 — 실제로 거절 후 재신청, 재신청 철회까지 확인했다.
+  이 로직은 최신 배정 하나가 아니라 "현재 열려 있는 상태"가 있는지로 판단하므로,
+  과거 이력이 몇 건이든 관계없이 동작한다.
+- **권한**: 수락·거절·종료는 그 활동의 `managerAccountId`만 할 수 있다(다른 관리자
+  계정으로 시도하면 거부됨을 확인). 철회는 신청 본인만, 그리고 아직 PROPOSED일
+  때만 가능하다 — 수락된 뒤에는 본인이 스스로 빠질 수 없고 책임자가 종료 처리해야
+  한다(활동을 무단이탈처럼 보이지 않게 하기 위한 의도적 제약).
+- 역할(`role`)은 자유 문자열이지만 v0.1 A05의 예시(책임/개발/강의/보조/운영/기록/자문)를
+  선택지로 제공한다(`src/lib/assignment-labels.ts`).
 
 ## 기여 작성·확인 흐름 (FR-06/07 구현)
 
@@ -206,9 +241,13 @@ SECRETARIAT·SYSTEM_ADMIN이 화면에서 이메일과(선택적으로) 역할�
 - **활동·기구 선택형 UI**: 역할 관리 화면에서 범위를 활동/기구로 좁힐 때 ID를 직접
   입력해야 한다 — 활동 관리 화면이 생기면 선택형으로 바꿀 대상이다.
 - **역할 부여 이력 조회**: 종료된(과거) 역할 부여를 보는 화면이 없다 — DB에는 남아있다.
-- **참여 신청·배치(FR-05) 실제 구현**: `ActivityAssignment` 화면은 아직 자리표시자다.
 - **주체 검색·연결 UI**: 초대 시 기존 주체를 찾아 미리 연결하는 화면이 없다 — 지금은
   항상 새 주체를 자동 생성한다. 동명이인·중복 주체 정리 화면도 없다.
+- **배정 IN_PROGRESS 전환**: `AssignmentStatus`에 있는 상태지만, 수락(ACCEPTED)과
+  구분해 화면에서 따로 눌러 바꿀 방법이 없다 — 지금은 수락되면 실제로 기록을 남길
+  수 있으므로 이 구분이 급하지 않다고 판단했다.
+- **활동 등록 화면**: 활동 자체를 만드는 화면이 없어(참여 신청을 받을 대상), 지금은
+  `prisma/seed-sample-data.ts` 같은 스크립트나 DB 직접 조작으로만 활동이 생긴다.
 - **첨부파일 업로드**: 기여 증빙은 "선택"이라 스키마에는 있지만, S3/MinIO 연동
   (ADR-0001)이 없어 업로드 UI 자체를 만들지 않았다.
 - **알림 발송(BullMQ/Redis), 로그인 요청 속도 제한**: 백그라운드 작업 큐가 아직 없다.
@@ -272,3 +311,11 @@ npm run dev                  # http://localhost:3000
     역할은 TOTP 없이 바로 홈 진입); 취소한 초대는 상태가 REVOKED로 바뀌고 그 토큰으로
     접속 시 거부됨; SECRETARIAT/SYSTEM_ADMIN이 아닌 역할(DOMAIN_OPERATOR로 테스트)은
     이 화면과 초대 발급 API 양쪽 모두에서 차단됨
+  - 참여 신청·배치 흐름(`/activities/[id]`, `/my/participation`): 신청(PROPOSED) 생성
+    성공; 같은 활동에 열려 있는 신청·배정이 있으면 중복 신청 거부; 활동 책임자가
+    아닌 계정의 수락·거절 시도는 차단; 책임자가 수락하면 ACCEPTED로 바뀌고
+    startDate가 채워짐; 책임자가 거절하면 CANCELLED로 바뀌고, 거절된 뒤에는 같은
+    사람이 같은 활동에 다시 신청할 수 있음(재확인함); 본인이 아직 PROPOSED인 신청을
+    스스로 철회하면 CANCELLED로 바뀜; 다른 사람의 신청을 철회하려는 시도와 이미
+    ACCEPTED인 신청을 본인이 철회하려는 시도는 모두 차단됨(수락 후에는 책임자만
+    종료 가능); 책임자가 종료 처리하면 ENDED로 바뀌고 endDate가 채워짐
