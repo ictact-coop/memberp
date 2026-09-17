@@ -13,7 +13,8 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "bootstrap-admin": "tsx prisma/bootstrap-admin.ts"
+    "bootstrap-admin": "tsx prisma/bootstrap-admin.ts",
+    "seed-sample-data": "tsx prisma/seed-sample-data.ts"
   },
   "repository": {
     "type": "git",
