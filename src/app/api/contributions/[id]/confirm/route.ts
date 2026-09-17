@@ -3,8 +3,10 @@ import { prisma } from "@/lib/prisma";
 import { getActiveSession } from "@/lib/auth/session";
 
 // FR-07 확인. "담당 범위"는 활동 책임자(Activity.managerAccountId) 또는 수요 담당자
-// (Need.assigneeAccountId)로 판단한다 — 아직 별도 권한 시스템이 없어 이미 있는
-// 소유권 필드를 재사용했다.
+// (Need.assigneeAccountId)로 판단한다 — 역할(PermissionGrant)이 아니라 실제 소유권으로
+// 검사한다. /review 페이지는 역할 또는 소유권 중 하나만 있어도 들어올 수 있지만
+// (roles.ts의 canAccessReviewInbox), 실제로 "이 항목을 확인해도 되는가"는 소유권만
+// 본다 — 역할이 있어도 남의 활동 제출물을 확인할 수는 없다.
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const active = await getActiveSession();
   if (!active) {

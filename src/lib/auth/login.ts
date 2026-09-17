@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { sendLoginEmail } from "@/lib/email/resend";
 import { generateToken, hashToken } from "./crypto";
 import { createSession } from "./session";
+import { hasAnyRole } from "./roles";
 import { ELEVATED_ROLES, LOGIN_TOKEN_TTL_MINUTES } from "./config";
 
 function getBaseUrl(): string {
@@ -64,7 +65,7 @@ export async function consumeLoginToken(rawToken: string): Promise<ConsumeLoginT
     data: { consumedAt: new Date() },
   });
 
-  const requiresTotp = await accountRequiresTotp(loginToken.accountId);
+  const requiresTotp = await hasAnyRole(loginToken.accountId, ELEVATED_ROLES);
   const hasTotpEnrolled = loginToken.account.totpEnabledAt !== null;
 
   const headerList = await headers();
@@ -81,17 +82,4 @@ export async function consumeLoginToken(rawToken: string): Promise<ConsumeLoginT
 
   if (!requiresTotp) return { outcome: "success" };
   return hasTotpEnrolled ? { outcome: "needs_totp_code" } : { outcome: "needs_totp_setup" };
-}
-
-async function accountRequiresTotp(accountId: string): Promise<boolean> {
-  const now = new Date();
-  const grant = await prisma.permissionGrant.findFirst({
-    where: {
-      accountId,
-      role: { in: ELEVATED_ROLES },
-      startDate: { lte: now },
-      OR: [{ endDate: null }, { endDate: { gte: now } }],
-    },
-  });
-  return grant !== null;
 }

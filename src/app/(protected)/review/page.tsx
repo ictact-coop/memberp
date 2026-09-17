@@ -1,4 +1,6 @@
+import { redirect } from "next/navigation";
 import { requireActiveSession } from "@/lib/auth/session";
+import { canAccessReviewInbox } from "@/lib/auth/roles";
 import { prisma } from "@/lib/prisma";
 import {
   COMPENSATION_BASIS_LABELS,
@@ -10,15 +12,19 @@ const ERROR_MESSAGES: Record<string, string> = {
   self_confirm: "본인이 작성한 기여는 스스로 확인할 수 없습니다. 다른 확인자가 처리해야 합니다.",
 };
 
-// 담당자 확인함 — FR-07. "담당 범위"는 활동 책임자(Activity.managerAccountId) 또는
-// 수요 담당자(Need.assigneeAccountId)로 판단한다 — 별도 역할 기반 접근 제어가 아직
-// 없어(다음 작업) 이미 있는 소유권 필드를 재사용했다.
+// 담당자 확인함 — FR-07. 이 화면 자체는 역할(ACTIVITY_MANAGER 등)이 있거나 실제로
+// 활동·수요의 담당자로 지정된 계정만 들어올 수 있다(canAccessReviewInbox). 어떤
+// 항목을 볼 수 있는지는 그 아래에서 여전히 소유권(managerAccountId 등)으로 좁힌다 —
+// 역할이 있어도 남의 활동 제출물은 보이지 않는다.
 export default async function ReviewInboxPage({
   searchParams,
 }: {
   searchParams: Promise<{ error?: string }>;
 }) {
   const active = await requireActiveSession();
+  if (!(await canAccessReviewInbox(active.account.id))) {
+    redirect("/forbidden");
+  }
   const { error } = await searchParams;
 
   const contributions = await prisma.contribution.findMany({
