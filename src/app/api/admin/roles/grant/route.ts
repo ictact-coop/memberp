@@ -20,8 +20,8 @@ export async function POST(request: Request) {
   const formData = await request.formData();
   const accountId = formData.get("accountId");
   const roleRaw = formData.get("role");
-  const scopeTypeRaw = formData.get("scopeType");
-  const scopeIdRaw = formData.get("scopeId");
+  const scopeActivityIdRaw = formData.get("scopeActivityId");
+  const scopeOrgUnitIdRaw = formData.get("scopeOrgUnitId");
   const startDateRaw = formData.get("startDate");
   const endDateRaw = formData.get("endDate");
 
@@ -36,19 +36,32 @@ export async function POST(request: Request) {
     return NextResponse.redirect(new URL("/admin/roles?error=invalid", request.url));
   }
 
-  const scopeType: ScopeType =
-    typeof scopeTypeRaw === "string" &&
-    (Object.values(ScopeType) as string[]).includes(scopeTypeRaw)
-      ? (scopeTypeRaw as ScopeType)
-      : "GLOBAL";
-  const scopeId =
-    scopeType !== "GLOBAL" && typeof scopeIdRaw === "string" && scopeIdRaw.trim()
-      ? scopeIdRaw.trim()
-      : null;
-  // 범위를 특정 활동/기구로 지정했다면 ID를 반드시 함께 받는다 — 범위만 있고
-  // 대상이 없으면 사실상 GLOBAL과 구분이 안 되는 애매한 부여가 된다.
-  if (scopeType !== "GLOBAL" && !scopeId) {
-    return NextResponse.redirect(new URL("/admin/roles?error=scope_id_required", request.url));
+  const scopeActivityId =
+    typeof scopeActivityIdRaw === "string" && scopeActivityIdRaw.trim() ? scopeActivityIdRaw.trim() : null;
+  const scopeOrgUnitId =
+    typeof scopeOrgUnitIdRaw === "string" && scopeOrgUnitIdRaw.trim() ? scopeOrgUnitIdRaw.trim() : null;
+  // 활동과 기구는 화면에서 서로 다른 필드지만 실제로는 같은 "범위" 하나를 고르는
+  // 것이므로, 둘 다 채워서 오면 어느 쪽인지 알 수 없어 거부한다.
+  if (scopeActivityId && scopeOrgUnitId) {
+    return NextResponse.redirect(new URL("/admin/roles?error=scope_ambiguous", request.url));
+  }
+
+  let scopeType: ScopeType = "GLOBAL";
+  let scopeId: string | null = null;
+  if (scopeActivityId) {
+    const activity = await prisma.activity.findUnique({ where: { id: scopeActivityId } });
+    if (!activity) {
+      return NextResponse.redirect(new URL("/admin/roles?error=invalid_scope", request.url));
+    }
+    scopeType = "ACTIVITY";
+    scopeId = scopeActivityId;
+  } else if (scopeOrgUnitId) {
+    const orgUnit = await prisma.subject.findUnique({ where: { id: scopeOrgUnitId } });
+    if (!orgUnit || orgUnit.type !== "ORG_UNIT") {
+      return NextResponse.redirect(new URL("/admin/roles?error=invalid_scope", request.url));
+    }
+    scopeType = "ORG_UNIT";
+    scopeId = scopeOrgUnitId;
   }
 
   const startDate =
