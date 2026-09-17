@@ -28,7 +28,10 @@ src/
         profile/page.tsx   내 정보 (FR-03) — 로그인 이메일 표시·로그아웃 버튼은 실제 동작
       needs/page.tsx       상담·수요 = "우리 조합" (FR-08)
       review/page.tsx      담당자 확인함 (FR-07) — 실제 확인·보완요청 동작
-      admin/page.tsx        관리자 설정 (FR-01, FR-11)
+      admin/
+        page.tsx              관리자 설정 허브 — 하위 도구로 이동하는 링크 모음
+        roles/page.tsx        역할 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 역할 부여·종료
+      forbidden/page.tsx    로그인은 됐지만 역할·담당 범위가 안 맞을 때
     api/
       health/route.ts      헬스체크 (DB 연결 확인)
       auth/
@@ -42,6 +45,9 @@ src/
         save/route.ts               POST: 임시저장/제출 (BR-01, BR-06 멱등성)
         [id]/confirm/route.ts       POST: 담당자 확인 (BR-04/05 버전 대체 처리)
         [id]/request-revision/route.ts  POST: 보완 요청
+      admin/roles/
+        grant/route.ts             POST: 역할 부여
+        [id]/revoke/route.ts       POST: 역할 종료(endDate 채움, 삭제 아님)
   components/
     BottomNav.tsx        모바일 기본 메뉴 (v0.2 §2.1): 홈/참여할 일/기록하기/우리 조합/내 정보
     ScreenPlaceholder.tsx  아직 구현되지 않은 화면의 공통 자리표시자
@@ -49,10 +55,13 @@ src/
     prisma.ts            PrismaClient 싱글턴
     display-id.ts        ACT-0001 등 표시번호를 원자적으로 채번(DisplaySequence upsert)
     contribution-labels.ts  기여 유형·유무급·상태 enum의 한글 라벨(화면 3곳 이상 공유)
+    role-labels.ts       PermissionRole·ScopeType enum의 한글 라벨
     auth/
       crypto.ts            토큰 생성·해시, TOTP 비밀키 암호화(AES-256-GCM), 복구코드 생성
       config.ts            토큰 TTL·세션 기간·TOTP 강제 대상 역할 등 상수
       session.ts           세션 생성·조회·폐기 (DB 기반, 계정 상태 실시간 확인)
+      roles.ts             역할 조회(getActiveRoles/hasAnyRole), 페이지 가드(requireRole),
+                            담당자 확인함 접근 판정(canAccessReviewInbox)
       login.ts             매직링크 요청·소비
       totp.ts              TOTP 등록·검증, 복구코드 소비
     email/
@@ -138,6 +147,23 @@ accept-invitation?token=…      login (이메일 입력)
 역할 없음+담당 있음 → 통과, 담당 있어도 역할 없으면 `/admin`은 여전히 차단)을 모두
 확인했다(§검증 이력).
 
+### 역할 관리 화면 (`/admin/roles`)
+
+`PermissionGrant`를 만들고 종료하는 화면이다. SECRETARIAT·SYSTEM_ADMIN만 들어올 수
+있고, API(`/api/admin/roles/grant`, `/api/admin/roles/[id]/revoke`)도 화면과 별개로
+같은 역할을 다시 확인한다 — 폼 렌더링을 거치지 않고 바로 POST가 올 수 있어서다.
+
+- **범위 지정**: 역할을 전체(GLOBAL) 또는 특정 활동·기구(ACTIVITY/ORG_UNIT)로 좁힐 수
+  있다. 활동·기구를 고르는 화면이 없어 ID를 직접 입력해야 한다 — 활동 목록·관리
+  화면이 생기면 선택형으로 바꿀 대상이다. 범위를 특정으로 골랐는데 ID가 없으면 거부한다.
+- **종료는 삭제가 아니다**: "종료" 버튼은 `endDate`를 오늘로 채운다. 누가 언제까지 그
+  역할을 가지고 있었는지 이력이 남는다(v0.1 §2.1 "삭제 대신 보관").
+- **자기 잠금 방지**: 자신의 마지막 SECRETARIAT/SYSTEM_ADMIN 부여를 스스로 종료하려
+  하면 막는다 — 그렇지 않으면 소규모 조직에서 관리자가 한 명뿐일 때 실수로 자기 자신을
+  관리 화면에서 내쫓는 상황이 생긴다.
+- 계정 목록에는 이메일·연결된 주체 이름·상태와 현재 유효한 역할만 보여준다(만료된
+  과거 부여는 이 화면에서 숨긴다 — 이력 조회는 아직 없음).
+
 ## 화면과 요구사항 번호의 연결
 
 `src/app` 폴더 구조는 v1.0 §6(화면 구성)의 R1 화면과 §5(FR 번호)에 맞춰 배치했다.
@@ -150,8 +176,9 @@ accept-invitation?token=…      login (이메일 입력)
 
 - **역할별 화면 커스터마이징**: 지금은 "들어올 수 있는가/없는가"만 있고, 역할에 따라
   메뉴나 화면 내용 자체를 다르게 보여주는 것은 없다(v1.0 §8의 역할별 홈 화면 등).
-- **역할 부여 화면**: `PermissionGrant`를 만드는 관리자 UI가 없다 — 지금은 초대 시
-  `suggestedRole`로 한 번 부여되거나, 직접 DB 조작으로만 가능하다.
+- **활동·기구 선택형 UI**: 역할 관리 화면에서 범위를 활동/기구로 좁힐 때 ID를 직접
+  입력해야 한다 — 활동 관리 화면이 생기면 선택형으로 바꿀 대상이다.
+- **역할 부여 이력 조회**: 종료된(과거) 역할 부여를 보는 화면이 없다 — DB에는 남아있다.
 - **참여 신청·배치(FR-05) 실제 구현**: `ActivityAssignment` 화면은 아직 자리표시자다.
 - **관리자 초대 화면**: 초대장 생성은 아직 `prisma/bootstrap-admin.ts` 스크립트로만 가능.
 - **첨부파일 업로드**: 기여 증빙은 "선택"이라 스키마에는 있지만, S3/MinIO 연동
@@ -203,3 +230,9 @@ npm run dev                  # http://localhost:3000
     역할 없이 어떤 활동의 담당자로만 지정하면 `/review`는 통과하되 `/admin`은 여전히
     막힘(소유권이 다른 화면 권한까지 주지 않음); 만료된 역할 부여(`endDate`가 과거)는
     무효로 취급되고, 유효한 부여로 바꾸면 즉시 통과됨
+  - 역할 관리 화면(`/admin/roles`): 관리자가 다른 계정에 전체(GLOBAL) 역할 부여 성공;
+    범위를 특정 활동으로 지정하면서 ID를 비우면 거부, ID를 채우면 성공; 부여한 역할을
+    종료하면 `endDate`가 채워지고 목록에서 사라짐; 관리자가 자신의 마지막 관리자
+    역할을 스스로 종료하려 하면 차단되고 역할은 그대로 유지됨; 역할이 없는 일반
+    계정은 이 화면과 grant/revoke API 양쪽 모두에서 `/forbidden`으로 밀려남(직접
+    API를 호출해도 막힘)
