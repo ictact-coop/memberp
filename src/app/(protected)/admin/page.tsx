@@ -12,12 +12,15 @@ export default async function AdminPage() {
     <section>
       <h1 style={{ fontSize: 20 }}>관리자 설정</h1>
       <p>
+        <Link href="/admin/invitations">초대 관리 →</Link>
+      </p>
+      <p>
         <Link href="/admin/roles">역할 관리 →</Link>
       </p>
       <ScreenPlaceholder
-        title="초대·계정 상태, 감사기록, 백업 상태"
+        title="계정 상태, 감사기록, 백업 상태"
         frCode="FR-01, FR-11"
-        description="초대장 발급은 현재 prisma/bootstrap-admin.ts 스크립트로만 가능합니다."
+        description="아직 구현되지 않았습니다."
       />
     </section>
   );

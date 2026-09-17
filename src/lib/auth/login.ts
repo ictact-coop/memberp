@@ -4,15 +4,7 @@ import { sendLoginEmail } from "@/lib/email/resend";
 import { generateToken, hashToken } from "./crypto";
 import { createSession } from "./session";
 import { hasAnyRole } from "./roles";
-import { ELEVATED_ROLES, LOGIN_TOKEN_TTL_MINUTES } from "./config";
-
-function getBaseUrl(): string {
-  const url = process.env.APP_BASE_URL;
-  if (!url) {
-    throw new Error("APP_BASE_URL 환경변수가 설정되지 않았습니다.");
-  }
-  return url;
-}
+import { ELEVATED_ROLES, LOGIN_TOKEN_TTL_MINUTES, getBaseUrl } from "./config";
 
 export async function requestLoginLink(rawEmail: string): Promise<void> {
   const email = rawEmail.trim().toLowerCase();

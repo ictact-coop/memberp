@@ -30,6 +30,7 @@ src/
       review/page.tsx      담당자 확인함 (FR-07) — 실제 확인·보완요청 동작
       admin/
         page.tsx              관리자 설정 허브 — 하위 도구로 이동하는 링크 모음
+        invitations/page.tsx  초대 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 발급·재발송·취소
         roles/page.tsx        역할 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 역할 부여·종료
       forbidden/page.tsx    로그인은 됐지만 역할·담당 범위가 안 맞을 때
     api/
@@ -45,9 +46,14 @@ src/
         save/route.ts               POST: 임시저장/제출 (BR-01, BR-06 멱등성)
         [id]/confirm/route.ts       POST: 담당자 확인 (BR-04/05 버전 대체 처리)
         [id]/request-revision/route.ts  POST: 보완 요청
-      admin/roles/
-        grant/route.ts             POST: 역할 부여
-        [id]/revoke/route.ts       POST: 역할 종료(endDate 채움, 삭제 아님)
+      admin/
+        roles/
+          grant/route.ts             POST: 역할 부여
+          [id]/revoke/route.ts       POST: 역할 종료(endDate 채움, 삭제 아님)
+        invitations/
+          create/route.ts            POST: 초대 발급 + 이메일 발송
+          [id]/resend/route.ts       POST: 새 토큰 발급 후 재발송(같은 레코드 재사용)
+          [id]/revoke/route.ts       POST: 초대 취소
   components/
     BottomNav.tsx        모바일 기본 메뉴 (v0.2 §2.1): 홈/참여할 일/기록하기/우리 조합/내 정보
     ScreenPlaceholder.tsx  아직 구현되지 않은 화면의 공통 자리표시자
@@ -58,17 +64,20 @@ src/
     role-labels.ts       PermissionRole·ScopeType enum의 한글 라벨
     auth/
       crypto.ts            토큰 생성·해시, TOTP 비밀키 암호화(AES-256-GCM), 복구코드 생성
-      config.ts            토큰 TTL·세션 기간·TOTP 강제 대상 역할 등 상수
+      config.ts            토큰 TTL·세션 기간·TOTP 강제 대상 역할·getBaseUrl() 등
       session.ts           세션 생성·조회·폐기 (DB 기반, 계정 상태 실시간 확인)
       roles.ts             역할 조회(getActiveRoles/hasAnyRole), 페이지 가드(requireRole),
                             담당자 확인함 접근 판정(canAccessReviewInbox)
       login.ts             매직링크 요청·소비
       totp.ts              TOTP 등록·검증, 복구코드 소비
     email/
-      resend.ts            ADR-0003: Resend 발송 래퍼. API 키 없으면 콘솔에 링크 출력
+      resend.ts            ADR-0003: Resend 발송 래퍼(로그인·초대 공용). API 키 없으면
+                            콘솔에 링크 출력
 prisma/
   schema.prisma          R1 데이터 모델 (별도 설계 문서: docs/design/r1-schema.md)
-  bootstrap-admin.ts     최초 관리자 초대장을 만드는 1회성 스크립트(관리자 초대 화면 없음)
+  bootstrap-admin.ts     최초 관리자 초대장을 만드는 1회성 스크립트 — 이제 정식 화면
+                         (/admin/invitations)이 있지만, 첫 관리자는 그 화면에 들어갈
+                         계정 자체가 없어 여전히 스크립트로 부트스트랩해야 한다.
 ```
 
 ## 인증 흐름 (ADR-0002 구현)
@@ -164,6 +173,24 @@ accept-invitation?token=…      login (이메일 입력)
 - 계정 목록에는 이메일·연결된 주체 이름·상태와 현재 유효한 역할만 보여준다(만료된
   과거 부여는 이 화면에서 숨긴다 — 이력 조회는 아직 없음).
 
+### 초대 관리 화면 (`/admin/invitations`)
+
+지금까지 초대장은 `prisma/bootstrap-admin.ts` 스크립트로만 만들 수 있었다. 이제
+SECRETARIAT·SYSTEM_ADMIN이 화면에서 이메일과(선택적으로) 역할을 입력해 초대를 보낼
+수 있다. 역할을 함께 지정하면 그 역할이 가입과 동시에 `PermissionGrant`로 부여되고,
+그 역할이 TOTP 대상(BOARD/FINANCE/SECRETARIAT/SYSTEM_ADMIN)이면 가입 직후 TOTP 등록이
+강제된다 — 이 흐름은 이미 accept-invitation route에 있던 로직 그대로다.
+
+- **중복 방지**: 이미 가입된 이메일은 거부하고("역할 관리에서 부여하라"고 안내), 이미
+  PENDING 상태인 초대가 있으면 새로 만들지 않고 재발송을 쓰라고 안내한다.
+- **재발송은 같은 레코드를 재사용**: 새 토큰을 발급하고 만료일을 늘려 다시 보낸다.
+  이전 토큰은 그 순간 무효가 된다(같은 Invitation 행의 tokenHash가 바뀌므로). 실제로
+  이전 토큰으로 접속하면 거부되는 것을 확인했다.
+- **취소는 상태만 REVOKED로 바꾼다** — 레코드를 지우지 않으므로 "누가 언제 초대를
+  취소했는가"가 남는다(다만 "누가"는 아직 감사기록에 남기지 않는다).
+- 주체(Subject) 미리 연결하기는 아직 없다 — 주체를 검색해 고르는 화면이 없어서다.
+  지금은 가입 시 자동으로 최소 정보의 주체가 만들어진다(§"인증 흐름" 참고).
+
 ## 화면과 요구사항 번호의 연결
 
 `src/app` 폴더 구조는 v1.0 §6(화면 구성)의 R1 화면과 §5(FR 번호)에 맞춰 배치했다.
@@ -180,7 +207,8 @@ accept-invitation?token=…      login (이메일 입력)
   입력해야 한다 — 활동 관리 화면이 생기면 선택형으로 바꿀 대상이다.
 - **역할 부여 이력 조회**: 종료된(과거) 역할 부여를 보는 화면이 없다 — DB에는 남아있다.
 - **참여 신청·배치(FR-05) 실제 구현**: `ActivityAssignment` 화면은 아직 자리표시자다.
-- **관리자 초대 화면**: 초대장 생성은 아직 `prisma/bootstrap-admin.ts` 스크립트로만 가능.
+- **주체 검색·연결 UI**: 초대 시 기존 주체를 찾아 미리 연결하는 화면이 없다 — 지금은
+  항상 새 주체를 자동 생성한다. 동명이인·중복 주체 정리 화면도 없다.
 - **첨부파일 업로드**: 기여 증빙은 "선택"이라 스키마에는 있지만, S3/MinIO 연동
   (ADR-0001)이 없어 업로드 UI 자체를 만들지 않았다.
 - **알림 발송(BullMQ/Redis), 로그인 요청 속도 제한**: 백그라운드 작업 큐가 아직 없다.
@@ -236,3 +264,11 @@ npm run dev                  # http://localhost:3000
     역할을 스스로 종료하려 하면 차단되고 역할은 그대로 유지됨; 역할이 없는 일반
     계정은 이 화면과 grant/revoke API 양쪽 모두에서 `/forbidden`으로 밀려남(직접
     API를 호출해도 막힘)
+  - 초대 관리 화면(`/admin/invitations`): 역할을 지정한 초대 발급 성공, 콘솔에 초대
+    링크 출력(dev 이메일 폴백) 확인; 같은 이메일로 중복 초대 시도 거부(already_invited),
+    이미 가입된 이메일 초대 시도 거부(already_registered), 형식이 틀린 이메일 거부;
+    재발송하면 새 토큰이 발급되고 옛 토큰은 즉시 무효화됨(실제로 옛 토큰 접속이
+    거부되는 것을 확인); 초대를 수락하면 지정한 역할이 실제로 부여됨(TOTP 비대상
+    역할은 TOTP 없이 바로 홈 진입); 취소한 초대는 상태가 REVOKED로 바뀌고 그 토큰으로
+    접속 시 거부됨; SECRETARIAT/SYSTEM_ADMIN이 아닌 역할(DOMAIN_OPERATOR로 테스트)은
+    이 화면과 초대 발급 API 양쪽 모두에서 차단됨
