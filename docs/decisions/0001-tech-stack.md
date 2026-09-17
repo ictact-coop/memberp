@@ -27,7 +27,7 @@
 | 애플리케이션 | Next.js (App Router) + TypeScript 단일 모놀리스 (화면 + API) |
 | 데이터베이스 | PostgreSQL |
 | ORM | Prisma |
-| 인증 | Auth.js(NextAuth), 초대 기반 가입 + 이메일/전화 매직링크 또는 OTP |
+| 인증 | 이메일 매직링크 + DB 세션(자체 구현), 초대 기반 가입, 임원급 TOTP — ADR-0002 참고 |
 | 파일 저장소 | S3 호환 오브젝트 스토리지 (자체 호스팅: MinIO / 관리형 대안: Cloudflare R2) + 서명 URL |
 | 백그라운드 작업 | BullMQ + Redis (알림, Notion 이전 배치, 백업 트리거) |
 | 배포 | 자체 VPS + Docker Compose (Next.js, Postgres, Redis, MinIO 컨테이너 + Caddy TLS 리버스 프록시) |
