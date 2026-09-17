@@ -13,9 +13,10 @@ async function main() {
     process.exit(1);
   }
 
-  const manager = await prisma.account.findUnique({ where: { email: email.toLowerCase() } });
+  const normalizedEmail = email.trim().toLowerCase();
+  const manager = await prisma.account.findUnique({ where: { email: normalizedEmail } });
   if (!manager) {
-    console.error(`계정을 찾을 수 없습니다: ${email} (먼저 초대를 수락해 계정을 만드세요)`);
+    console.error(`계정을 찾을 수 없습니다: ${normalizedEmail} (먼저 초대를 수락해 계정을 만드세요)`);
     process.exit(1);
   }
 
@@ -45,7 +46,7 @@ async function main() {
 
   console.log(`샘플 활동 생성: ${activity.displayId} (${activity.title})`);
   console.log(`샘플 상담 생성: ${need.displayId} (${need.title})`);
-  console.log(`담당자: ${email} — 이 계정으로 /review에서 확인할 수 있습니다.`);
+  console.log(`담당자: ${normalizedEmail} — 이 계정으로 /review에서 확인할 수 있습니다.`);
   console.log("기여는 다른 계정으로 /my/contributions/new 에서 작성해야 자가확인 제한에");
   console.log("걸리지 않고 /review에서 확인 버튼을 테스트할 수 있습니다.");
 }
