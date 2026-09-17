@@ -61,6 +61,7 @@ src/
         [id]/reject/route.ts        POST: 책임자가 거절 → CANCELLED
         [id]/end/route.ts           POST: 책임자가 종료 처리 → ENDED
         [id]/withdraw/route.ts      POST: 본인이 철회(PROPOSED일 때만) → CANCELLED
+        [id]/start/route.ts         POST: 본인이 진행 시작(ACCEPTED일 때만) → IN_PROGRESS
       admin/
         roles/
           grant/route.ts             POST: 역할 부여
@@ -267,14 +268,21 @@ v0.1 §3.2의 활동 상태표를 그대로 코드화했다: 기획→승인대�
   └ 참여 신청(PROPOSED) ─────────────────→  ├ 수락 → ACCEPTED (startDate 채움)
                                            └ 거절 → CANCELLED
 /my/participation
-  └ 신청 철회(PROPOSED일 때만) → CANCELLED   활동 책임자만 종료 처리 가능:
-                                           ACCEPTED/IN_PROGRESS → ENDED (endDate 채움)
+  ├ 신청 철회(PROPOSED일 때만) → CANCELLED   활동 책임자만 종료 처리 가능:
+  └ 진행 시작(ACCEPTED일 때만) → IN_PROGRESS  ACCEPTED/IN_PROGRESS → ENDED (endDate 채움)
 ```
 
 - **배치는 실적이 아니다(BR-02)**: `ActivityAssignment`는 "누가 참여하기로 했는가"만
   기록한다. 실제 기여는 별도로 `/my/contributions/new`에서 작성해야 한다 — 수락됐다고
   자동으로 기여가 생기지 않는다. `/my/participation`과 활동 상세 화면 모두 수락된
   참여 옆에 "이 활동으로 기록하기" 링크만 둔다.
+- **ACCEPTED → IN_PROGRESS 전환은 본인이 한다**: 실제로 일을 시작했는지는 책임자보다
+  본인이 더 정확히 알기 때문에, 수락·거절·종료(책임자 권한)와 달리 이 전환은
+  신청 철회와 같은 원칙으로 본인만 할 수 있다(`POST
+  /api/activity-assignments/[id]/start`). `ACCEPTED` 상태가 아니면(아직 `PROPOSED`거나
+  이미 `IN_PROGRESS`/`ENDED`/`CANCELLED`면) 조용히 무시하고, 배정 본인이 아니면
+  `forbidden`으로 막는다. 별도의 시작 시각 필드는 없다 — `startDate`는 이미 수락
+  시점에 채워져 있으므로 상태만 바뀐다.
 - **중복 신청 방지**: 이미 PROPOSED·ACCEPTED·IN_PROGRESS 상태의 신청이 있으면 같은
   활동에 다시 신청할 수 없다. 거절(CANCELLED)되거나 종료(ENDED)된 뒤에는 다시 신청할
   수 있다 — 실제로 거절 후 재신청, 재신청 철회까지 확인했다.
@@ -407,9 +415,6 @@ SECRETARIAT·SYSTEM_ADMIN이 화면에서 이메일과(선택적으로) 역할�
 - **역할 부여 이력 조회**: 종료된(과거) 역할 부여를 보는 화면이 없다 — DB에는 남아있다.
 - **주체 검색·연결 UI**: 초대 시 기존 주체를 찾아 미리 연결하는 화면이 없다 — 지금은
   항상 새 주체를 자동 생성한다. 동명이인·중복 주체 정리 화면도 없다.
-- **배정 IN_PROGRESS 전환**: `AssignmentStatus`에 있는 상태지만, 수락(ACCEPTED)과
-  구분해 화면에서 따로 눌러 바꿀 방법이 없다 — 지금은 수락되면 실제로 기록을 남길
-  수 있으므로 이 구분이 급하지 않다고 판단했다.
 - **활동 상위 구조·예산**: 활동 등록 화면에 상위 활동(parentActivityId) 지정이나
   예산(budgetBaseline) 입력이 없다 — 등록 자체가 이번에 처음 생겨 R1 FR-04 최소
   검수 기준(담당자·유형·기간·공개범위·상태)만 우선 채웠다.
@@ -503,6 +508,13 @@ npm run dev                  # http://localhost:3000
     스스로 철회하면 CANCELLED로 바뀜; 다른 사람의 신청을 철회하려는 시도와 이미
     ACCEPTED인 신청을 본인이 철회하려는 시도는 모두 차단됨(수락 후에는 책임자만
     종료 가능); 책임자가 종료 처리하면 ENDED로 바뀌고 endDate가 채워짐
+  - 배정 IN_PROGRESS 전환(`/api/activity-assignments/[id]/start`): 아직 PROPOSED인
+    신청에 대해 시도하면 상태가 안 바뀌고 조용히 무시됨(no-op); 수락(ACCEPTED)한
+    뒤 배정 당사자가 아닌 계정(활동 책임자 포함)이 시도하면 `forbidden`으로 차단;
+    배정 당사자가 시도하면 정확히 IN_PROGRESS로 바뀌고, `/my/participation`의
+    "진행 시작" 버튼이 사라짐과 활동 상세 화면의 책임자용 참여 중 목록에 "진행
+    중"으로 표시됨을 확인; 이미 IN_PROGRESS인 배정에 다시 시도해도 안전하게
+    무시됨(no-op)을 확인
   - 활동 등록 화면(`/activities/new`): 활동 운영 역할이 없는 일반 계정은 화면 접근 자체가
     `/forbidden`으로 막힘; SYSTEM_ADMIN 계정은 접근 가능하고 목록 화면에도 등록 링크가
     보임(일반 계정에는 링크 자체가 없음을 확인); 미션을 하나도 선택하지 않으면

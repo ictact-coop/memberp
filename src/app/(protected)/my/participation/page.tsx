@@ -5,7 +5,7 @@ import { ASSIGNMENT_STATUS_LABELS } from "@/lib/assignment-labels";
 
 const ERROR_MESSAGES: Record<string, string> = {
   no_subject: "계정에 연결된 사람 정보가 없습니다. 사무국에 문의하세요.",
-  forbidden: "본인의 신청만 철회할 수 있습니다.",
+  forbidden: "본인의 신청·배정만 처리할 수 있습니다.",
 };
 
 // 내 참여 — FR-05. 신청·배치 상태와 활동별 기록 진입점을 보여준다.
@@ -57,6 +57,13 @@ export default async function MyParticipationPage({
                 <form method="POST" action={`/api/activity-assignments/${assignment.id}/withdraw`}>
                   <button type="submit" style={{ fontSize: 12, padding: "4px 10px", marginTop: 4 }}>
                     신청 철회
+                  </button>
+                </form>
+              )}
+              {assignment.status === "ACCEPTED" && (
+                <form method="POST" action={`/api/activity-assignments/${assignment.id}/start`}>
+                  <button type="submit" style={{ fontSize: 12, padding: "4px 10px", marginTop: 4 }}>
+                    진행 시작
                   </button>
                 </form>
               )}
