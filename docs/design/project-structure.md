@@ -26,7 +26,7 @@ src/
       my/
         participation/page.tsx  내 참여 (FR-05) — 신청 목록, 철회, 기록하기 진입
         contributions/page.tsx  내 기여 (FR-07) — 실제 목록, 이어 작성·정정 요청 링크
-        contributions/new/page.tsx  기여 작성 = "기록하기" (FR-06) — 새로 작성/이어 작성/정정을 한 화면에서 처리
+        contributions/new/page.tsx  기여 작성 = "기록하기" (FR-06) — 새로 작성/이어 작성/정정 + 증빙 첨부(이어 작성 시)
         profile/page.tsx   내 정보 (FR-03) — 로그인 이메일·로그아웃, 연락처·관심 분야 수정
       needs/
         page.tsx              상담·수요 목록 (FR-08) — 로그인한 누구나 조회
@@ -53,6 +53,10 @@ src/
         save/route.ts               POST: 임시저장/제출 (BR-01, BR-06 멱등성)
         [id]/confirm/route.ts       POST: 담당자 확인 (BR-04/05 버전 대체 처리)
         [id]/request-revision/route.ts  POST: 보완 요청
+        [id]/attachments/route.ts   POST: 증빙 첨부(DRAFT/NEEDS_REVISION일 때만)
+      attachments/
+        [id]/download/route.ts      GET: 첨부파일 다운로드(업로더·담당자만)
+        [id]/delete/route.ts        POST: 첨부파일 소프트 삭제(업로더 본인만)
       activities/
         create/route.ts             POST: 활동 등록(항상 PLANNING 상태로 시작)
         [activityId]/
@@ -83,7 +87,8 @@ src/
   lib/
     prisma.ts            PrismaClient 싱글턴
     display-id.ts        ACT-0001 등 표시번호를 원자적으로 채번(DisplaySequence upsert)
-    contribution-labels.ts  기여 유형·유무급·상태 enum의 한글 라벨(화면 3곳 이상 공유)
+    contribution-labels.ts  기여 유형·유무급·상태·증거수준 enum의 한글 라벨(화면 3곳 이상 공유)
+    attachment-storage.ts   첨부파일 저장 추상화(ADR-0004) — 저장·읽기, 허용 타입·용량 제한
     subject-labels.ts     SubjectStatus(활성/휴면/종료/확인필요) 한글 라벨
     activity-labels.ts   ActivityManagementType·Mission·Visibility·ActivityStatus 한글 라벨
     activity-status.ts   활동 상태 전이표(ACTIVITY_TRANSITIONS), 전이 동작 한글 라벨
@@ -337,6 +342,55 @@ v0.1 §3.2의 활동 상태표를 그대로 코드화했다: 기획→승인대�
   남기려면 반드시 주체가 있어야 하기 때문이다(원본 구상인 "사무국이 나중에 확인 후
   연결"의 단순화 버전).
 
+## 기여 증빙 첨부파일 (ADR-0004, v0.1 A06 구현)
+
+기여 증빙은 스키마(`Attachment`)에는 R1 설계 때부터 있었지만, 어디에 저장할지(S3/
+MinIO 등)가 조합 결정 사항으로 남아 있어(ADR-0001) 업로드 화면 자체가 없었다.
+**ADR-0004**로 "R1은 로컬 디스크에 저장하고, 다운로드는 인증 라우트로만 제공한다"고
+임시 결정해 막힌 것을 풀었다 — 나중에 S3/MinIO로 옮길 때도 `src/lib/
+attachment-storage.ts` 두 함수(저장·읽기)만 바꾸면 되도록 감싸 뒀다.
+
+```
+/my/contributions/new?id=…            [담당자] /review
+  (임시저장·보완요청 상태에서만)              증빙 링크로 다운로드
+  ├ 파일 첨부 → Attachment 생성            (활동 책임자·수요 담당자만)
+  │  (SELF_REPORTED였다면 DOCUMENTED로 자동 승격)
+  └ 첨부 삭제(소프트) → 남은 첨부가 0건이면 DOCUMENTED를 SELF_REPORTED로 되돌림
+```
+
+- **어디서 첨부하는가**: 새로 작성하는 화면(`/my/contributions/new`, `id` 없음)에는
+  첨부 UI가 없다 — `Attachment.contributionId`가 실제 레코드를 가리켜야 하는데,
+  아직 저장되지 않은 기여에는 붙일 대상이 없기 때문이다. 먼저 임시저장한 뒤
+  "이어 작성"(`?id=...`)으로 들어와야 첨부 영역이 나타난다.
+- **잠금 조건**: 첨부 추가·삭제는 그 기여가 `DRAFT`/`NEEDS_REVISION`일 때만 된다 —
+  `?id=`로 들어오는 화면 자체가 이미 이 두 상태만 통과시키므로(그 외 상태는 목록으로
+  리다이렉트) 화면에서는 항상 열려 있지만, API(`/api/contributions/[id]/attachments`,
+  `/api/attachments/[id]/delete`)도 독립적으로 같은 조건을 다시 확인한다 — 제출·확인된
+  기여에 몰래 증거를 끼워 넣거나 빼는 것을 막기 위해서다.
+- **업로드 제한**: 이미지(JPEG/PNG/WEBP/GIF) 또는 PDF만, 파일당 10MB까지
+  (`src/lib/attachment-storage.ts`). 그 외 형식이나 용량 초과는 각각
+  `error=attachment_type`/`attachment_too_large`로 거부한다. 원본 파일명은
+  화면에 보여줄 때만 쓰고, 실제 저장 키(`fileKey`)는 서버가 무작위로 만든다 —
+  경로 조작이나 파일명 충돌을 막기 위해서다.
+- **증거 수준 자동 승격/강등**: v0.1 A06은 "증거 없는 자가신고도 허용하되 등급
+  표시"라고 요구한다. 스키마에 있던 `Contribution.evidenceLevel`을 이번에 처음
+  실제로 움직인다 — 자가신고(`SELF_REPORTED`) 상태에서 첫 증빙을 첨부하면
+  자동으로 증빙 첨부됨(`DOCUMENTED`)으로 올라가고, 마지막 남은 첨부를 지우면
+  다시 `SELF_REPORTED`로 되돌아간다. 참여자 확인(`PARTICIPANT_CONFIRMED`)처럼
+  더 높은 등급이 이미 있으면(아직 그 등급을 매기는 화면은 없지만) 건드리지 않는다.
+- **다운로드 권한**: 업로더 본인이거나, 그 기여가 딸린 활동의 책임자·상담의
+  담당자(=`/review`에서 그 항목을 볼 수 있는 사람)만 내려받을 수 있다. `public/`
+  폴더에 두지 않고 `/api/attachments/[id]/download`를 거치게 해 URL만 안다고
+  아무나 못 받게 막았다.
+- **삭제는 소프트 삭제, 파일은 남긴다**: 지운 첨부는 `deletedAt`만 채우고 실제
+  파일은 디스크에 그대로 둔다 — 실수로 지운 파일을 되살릴 여지를 남기려는
+  것이며(수동 복구는 아직 DB 조작으로만 가능), 다운로드 라우트는 `deletedAt`이
+  있으면 무조건 거부한다.
+- **정직하게 남겨둔 것**: ADR-0004가 명시하듯 이 저장 방식은 서버를 한 대만
+  운영한다고 전제한다(수평 확장 불가), 백업 계획이 없다, 바이러스 검사를 하지
+  않는다. 활동·상담·수요(NEED/ACTIVITY entityType)에 대한 첨부는 스키마에는
+  있지만 화면은 아직 기여(CONTRIBUTION) 하나만 만들었다.
+
 ## 우리 조합 = 상담·수요 화면 (`/needs`, FR-08 구현)
 
 v0.1 §3.1 "필요·기회" 상태전이 다이어그램을 활동 상태 전이와 같은 방식으로
@@ -504,8 +558,10 @@ SECRETARIAT·SYSTEM_ADMIN이 화면에서 이메일과(선택적으로) 역할�
 - **지역·전문영역 분류 체계**: `Classification` 모델은 스키마에 있지만 아직 아무
   화면도 쓰지 않는다 — 내 정보 화면의 지역·전문영역/관심은 정식 분류표 없이 자유
   텍스트(쉼표 목록)로 받는다. 분류 관리 화면이 생기면 선택형으로 바꿀 대상이다.
-- **첨부파일 업로드**: 기여 증빙은 "선택"이라 스키마에는 있지만, S3/MinIO 연동
-  (ADR-0001)이 없어 업로드 UI 자체를 만들지 않았다.
+- **첨부파일의 실제 객체 스토리지 이전**: ADR-0004가 명시한 대로, 지금은 로컬
+  디스크 임시 저장이다 — 조합이 S3/MinIO 등을 정하면 `attachment-storage.ts`만
+  바꿔 이전해야 한다. 활동·상담·수요에 대한 첨부(entityType NEED/ACTIVITY) 화면도
+  아직 없다(기여 증빙만 구현).
 - **알림 발송(BullMQ/Redis), 로그인 요청 속도 제한**: 백그라운드 작업 큐가 아직 없다.
 - **Docker Compose 배포 설정**: 로컬 검증은 이 컨테이너에 설치된 PostgreSQL로 직접 진행했다.
 
@@ -648,3 +704,17 @@ npm run dev                  # http://localhost:3000
     사유가 필요한 전이(보류·종결)와 상태 전이 전체가 `AuditLog`(entityType `"Need"`,
     action `STATUS_CHANGE`)에 beforeData/afterData/reason으로 정확히 남는 것을
     직접 조회해 확인
+  - 기여 증빙 첨부파일: 새로 작성 화면(`id` 없음)에는 첨부 UI가 없고, 먼저
+    임시저장한 뒤 "이어 작성"으로 들어가야 나타남을 확인; 허용되지 않는 파일
+    형식(.exe)은 `attachment_type`으로, 10MB를 넘는 파일은 `attachment_too_large`로
+    거부; 정상 이미지 파일을 첨부하면 `Attachment` 레코드가 생기고 파일이 로컬
+    디스크에 저장되며, 자가신고(SELF_REPORTED)였던 `evidenceLevel`이 증빙
+    첨부됨(DOCUMENTED)으로 자동 승격됨을 확인; 업로더가 아닌 계정의 다운로드·삭제
+    시도는 각각 `/forbidden`·`error=forbidden`으로 차단; 업로더 본인의 다운로드는
+    원본과 바이트 단위로 동일한 파일을 받음을 확인; 기여를 그 활동의 책임자에게
+    제출한 뒤에는 그 책임자도(=`/review`에서 볼 수 있는 사람) 같은 첨부를 내려받을
+    수 있고 `/review` 화면에도 증빙 링크가 표시됨을 확인; 제출(SUBMITTED)된 뒤에는
+    첨부 추가·삭제 API를 직접 호출해도 `error=locked`로 거부됨을 확인; 마지막 남은
+    첨부를 삭제하면 `evidenceLevel`이 다시 SELF_REPORTED로 되돌아가고, 삭제된
+    첨부는 DB에서 `deletedAt`만 채워질 뿐 실제 파일은 디스크에 남으며 다운로드는
+    `/forbidden`으로 막힘을 확인

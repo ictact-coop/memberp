@@ -1,4 +1,9 @@
-import type { CompensationBasis, ContributionStatus, ContributionType } from "@prisma/client";
+import type {
+  CompensationBasis,
+  ContributionEvidenceLevel,
+  ContributionStatus,
+  ContributionType,
+} from "@prisma/client";
 
 // v0.1 §5.4 여덟 가지 기여 유형
 export const CONTRIBUTION_TYPE_LABELS: Record<ContributionType, string> = {
@@ -17,6 +22,14 @@ export const COMPENSATION_BASIS_LABELS: Record<CompensationBasis, string> = {
   UNPAID_CONSENT: "무급(동의)",
   MIXED_NEEDS_SPLIT: "혼합(분리 필요)",
   UNCONFIRMED: "미확인",
+};
+
+// v0.1 A06: "증거 없는 자가신고도 허용하되 등급 표시" — 첨부파일이 붙으면
+// SELF_REPORTED에서 DOCUMENTED로 자동 승격한다(src/app/api/contributions/[id]/attachments).
+export const EVIDENCE_LEVEL_LABELS: Record<ContributionEvidenceLevel, string> = {
+  SELF_REPORTED: "자가신고",
+  PARTICIPANT_CONFIRMED: "참여자 확인",
+  DOCUMENTED: "증빙 첨부됨",
 };
 
 export const CONTRIBUTION_STATUS_LABELS: Record<ContributionStatus, string> = {

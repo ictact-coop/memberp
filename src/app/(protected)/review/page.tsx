@@ -39,6 +39,7 @@ export default async function ReviewInboxPage({
       activity: { select: { title: true } },
       need: { select: { title: true } },
       contributorSubject: { select: { name: true } },
+      attachments: { where: { deletedAt: null } },
     },
     orderBy: { submittedAt: "asc" },
   });
@@ -68,6 +69,17 @@ export default async function ReviewInboxPage({
               {contribution.revisionOfId && (
                 <p style={{ fontSize: 12, color: "#888888" }}>
                   기존 확인 기록의 정정본입니다. 확인하면 이전 값을 대체합니다.
+                </p>
+              )}
+              {contribution.attachments.length > 0 && (
+                <p style={{ fontSize: 12 }}>
+                  증빙:{" "}
+                  {contribution.attachments.map((attachment, index) => (
+                    <span key={attachment.id}>
+                      {index > 0 && ", "}
+                      <a href={`/api/attachments/${attachment.id}/download`}>{attachment.fileName}</a>
+                    </span>
+                  ))}
                 </p>
               )}
 
