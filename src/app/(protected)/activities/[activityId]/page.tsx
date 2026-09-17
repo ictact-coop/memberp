@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireActiveSession } from "@/lib/auth/session";
@@ -22,6 +23,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_transition: "지금 상태에서는 그 처리를 할 수 없습니다.",
   reason_required: "사유를 입력해야 합니다.",
   missing_planned_dates: "승인 요청 전에 시작·종료 예정일을 먼저 채워야 합니다.",
+  locked: "종료·취소된 활동은 수정할 수 없습니다. 수정은 정정 이력으로 남겨야 합니다.",
 };
 
 // 활동 상세 — FR-04, FR-05(참여 신청·배치)
@@ -66,6 +68,11 @@ export default async function ActivityDetailPage({
       <p style={{ fontSize: 12, color: "#888888" }}>{activity.displayId}</p>
       <h1 style={{ fontSize: 20 }}>{activity.title}</h1>
       <p style={{ color: "#555555" }}>{activity.purpose}</p>
+      {isManager && activity.status !== "CLOSED" && activity.status !== "CANCELLED" && (
+        <p>
+          <Link href={`/activities/${activity.id}/edit`}>활동 정보 수정</Link>
+        </p>
+      )}
       <dl>
         <dt>상태</dt>
         <dd>{ACTIVITY_STATUS_LABELS[activity.status]}</dd>
