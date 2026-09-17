@@ -37,7 +37,7 @@ erDiagram
 
 | FR | 기능 | 관련 테이블 |
 |---|---|---|
-| FR-01 | 초대·로그인·복구 | `Invitation`, `Account` |
+| FR-01 | 초대·로그인·복구 | `Invitation`, `Account`, `LoginToken`, `Session`, TOTP 관련(`Account.totpSecretCiphertext`, `TotpRecoveryCode`) — ADR-0002 참고 |
 | FR-02 | 계정과 사람 연결 | `Account.subjectId`(1:0..1), `Subject` |
 | FR-03 | 내 정보 관리 | `Subject` (연락처·관심 필드) |
 | FR-04 | 활동 등록·조회 | `Activity` |

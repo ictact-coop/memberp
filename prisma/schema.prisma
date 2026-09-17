@@ -47,6 +47,11 @@ enum InvitationStatus {
   REVOKED
 }
 
+// ADR-0002: 토큰을 발급 목적별로 구분해, 로그인용 토큰이 다른 용도로 재사용되지 않게 한다.
+enum LoginTokenPurpose {
+  LOGIN
+}
+
 // v1.0 §3 역할표
 enum PermissionRole {
   MEMBER
@@ -307,12 +312,20 @@ model Account {
   subjectId String?       @unique
   subject   Subject?      @relation(fields: [subjectId], references: [id])
 
+  // ADR-0002: 임원·재무·운영관리자 역할은 TOTP 2단계 인증을 추가로 요구한다.
+  // 비밀키는 애플리케이션이 암호화해 저장한다 — 평문 저장 금지.
+  totpSecretCiphertext String?
+  totpEnabledAt        DateTime?
+
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  permissionGrants PermissionGrant[]
-  notifications    Notification[]
+  permissionGrants  PermissionGrant[]
+  notifications     Notification[]
+  loginTokens       LoginToken[]
+  sessions          Session[]
+  totpRecoveryCodes TotpRecoveryCode[]
 
   @@map("accounts")
 }
@@ -321,7 +334,9 @@ model Account {
 model Invitation {
   id                 String           @id @default(uuid())
   contact            String
-  token              String           @unique
+  // 원문 토큰은 저장하지 않는다 — 해시만 저장해 DB 유출이 곧바로 초대 링크 탈취로
+  // 이어지지 않게 한다 (아래 LoginToken과 동일한 원칙).
+  tokenHash          String           @unique
   expiresAt          DateTime
   status             InvitationStatus @default(PENDING)
   invitedByAccountId String
@@ -333,6 +348,64 @@ model Invitation {
   updatedAt DateTime @updatedAt
 
   @@map("invitations")
+}
+
+// ADR-0002: 이메일 매직링크 로그인 토큰. 초대(Invitation)는 최초 1회 가입용이고,
+// LoginToken은 이미 계정이 있는 사람이 매번 로그인할 때 쓴다.
+model LoginToken {
+  id        String            @id @default(uuid())
+  accountId String
+  account   Account           @relation(fields: [accountId], references: [id])
+  tokenHash String            @unique
+  purpose   LoginTokenPurpose @default(LOGIN)
+
+  expiresAt          DateTime
+  consumedAt         DateTime?
+  requestedIp        String?
+  requestedUserAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([accountId])
+  @@map("login_tokens")
+}
+
+// ADR-0002: DB 기반 세션 — 계정을 정지·탈퇴 처리하면 그 순간부터 접근을 막아야
+// 하므로(FR-01) 매 요청마다 서버에서 상태를 확인할 수 있는 세션이어야 한다.
+// pendingSecondFactor가 true인 동안은 로그인이 완료된 것이 아니다: TOTP가 필요한
+// 역할인데 아직 코드를 확인하지 않은 상태를 뜻한다.
+model Session {
+  id               String  @id @default(uuid())
+  accountId        String
+  account          Account @relation(fields: [accountId], references: [id])
+  sessionTokenHash String  @unique
+
+  pendingSecondFactor Boolean @default(false)
+
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  userAgent  String?
+  ipAddress  String?
+
+  @@index([accountId])
+  @@map("sessions")
+}
+
+// ADR-0002: TOTP 기기를 분실했을 때의 복구 수단. 발급 시 10개를 만들고, 코드는
+// 해시로 저장하며 한 번 쓰면 재사용할 수 없다.
+model TotpRecoveryCode {
+  id        String    @id @default(uuid())
+  accountId String
+  account   Account   @relation(fields: [accountId], references: [id])
+  codeHash  String
+  usedAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@unique([accountId, codeHash])
+  @@map("totp_recovery_codes")
 }
 
 // v0.1 §4.10 "권한 부여 DB": 역할·담당 범위·기간·승인자
