@@ -7,6 +7,11 @@ import {
   REOPENABLE_ASSIGNMENT_STATUSES,
 } from "@/lib/assignment-labels";
 import { ACTIVITY_STATUS_LABELS, MISSION_LABELS } from "@/lib/activity-labels";
+import {
+  ACTIVITY_TRANSITION_LABELS,
+  ACTIVITY_TRANSITION_REASON_LABELS,
+  availableActivityTransitions,
+} from "@/lib/activity-status";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +19,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid: "요청을 처리할 수 없습니다.",
   already_applied: "이미 신청했거나 참여 중인 활동입니다.",
   forbidden: "담당 활동의 신청만 처리할 수 있습니다.",
+  invalid_transition: "지금 상태에서는 그 처리를 할 수 없습니다.",
+  reason_required: "사유를 입력해야 합니다.",
+  missing_planned_dates: "승인 요청 전에 시작·종료 예정일을 먼저 채워야 합니다.",
 };
 
 // 활동 상세 — FR-04, FR-05(참여 신청·배치)
@@ -65,9 +73,80 @@ export default async function ActivityDetailPage({
         <dd>{activity.missions.map((mission) => MISSION_LABELS[mission]).join(", ") || "미지정"}</dd>
         <dt>참여 배정</dt>
         <dd>{activity.assignments.length}건</dd>
+        {activity.closeEvaluationNote && (
+          <>
+            <dt>종료 평가</dt>
+            <dd>{activity.closeEvaluationNote}</dd>
+          </>
+        )}
       </dl>
 
       {error && ERROR_MESSAGES[error] && <p style={{ color: "#c0392b" }}>{ERROR_MESSAGES[error]}</p>}
+
+      {isManager && (
+        <div style={{ marginBottom: 16 }}>
+          <h2 style={{ fontSize: 16 }}>상태 관리</h2>
+          {availableActivityTransitions(activity.status).length === 0 ? (
+            <p style={{ color: "#555555" }}>
+              {activity.status === "CLOSED"
+                ? "종료된 활동입니다. 수정은 정정 이력으로 남겨야 합니다."
+                : "취소된 활동입니다."}
+            </p>
+          ) : (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {availableActivityTransitions(activity.status).map((transitionAction) => {
+                const reasonLabel = ACTIVITY_TRANSITION_REASON_LABELS[transitionAction];
+                return (
+                  <form
+                    key={transitionAction}
+                    method="POST"
+                    action={`/api/activities/${activity.id}/transition`}
+                    style={{ border: "1px solid #e0e0e0", padding: 10, borderRadius: 4 }}
+                  >
+                    <input type="hidden" name="action" value={transitionAction} />
+                    {reasonLabel && (
+                      <>
+                        <label
+                          htmlFor={`reason-${transitionAction}`}
+                          style={{ display: "block", fontSize: 12, marginBottom: 4 }}
+                        >
+                          {reasonLabel}
+                        </label>
+                        <textarea
+                          id={`reason-${transitionAction}`}
+                          name="reason"
+                          required
+                          rows={2}
+                          style={{ width: 220, padding: 6, fontSize: 14, marginBottom: 6 }}
+                        />
+                      </>
+                    )}
+                    {transitionAction === "hold" && (
+                      <>
+                        <label
+                          htmlFor="reviewDate"
+                          style={{ display: "block", fontSize: 12, marginBottom: 4 }}
+                        >
+                          재검토일 (선택)
+                        </label>
+                        <input
+                          id="reviewDate"
+                          name="reviewDate"
+                          type="date"
+                          style={{ width: 220, padding: 6, fontSize: 14, marginBottom: 6 }}
+                        />
+                      </>
+                    )}
+                    <button type="submit" style={{ padding: "8px 14px", fontSize: 14 }}>
+                      {ACTIVITY_TRANSITION_LABELS[transitionAction]}
+                    </button>
+                  </form>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       <h2 style={{ fontSize: 16 }}>내 참여</h2>
       {!active.account.subjectId ? (
