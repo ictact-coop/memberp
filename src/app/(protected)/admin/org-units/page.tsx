@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireRole } from "@/lib/auth/roles";
 import { prisma } from "@/lib/prisma";
 import { VISIBILITY_LABELS } from "@/lib/activity-labels";
@@ -20,10 +21,14 @@ export default async function OrgUnitsPage({
   await requireRole(["SECRETARIAT", "SYSTEM_ADMIN"]);
   const { error } = await searchParams;
 
-  const [orgUnits, accounts] = await Promise.all([
+  const [orgUnits, archivedOrgUnits, accounts] = await Promise.all([
     prisma.subject.findMany({
       where: { type: "ORG_UNIT", archivedAt: null },
       orderBy: { name: "asc" },
+    }),
+    prisma.subject.findMany({
+      where: { type: "ORG_UNIT", archivedAt: { not: null } },
+      orderBy: { archivedAt: "desc" },
     }),
     prisma.account.findMany({
       where: { status: "ACTIVE" },
@@ -33,7 +38,11 @@ export default async function OrgUnitsPage({
   ]);
 
   const responsibleIds = Array.from(
-    new Set(orgUnits.map((o) => o.responsibleAccountId).filter((id): id is string => id !== null)),
+    new Set(
+      [...orgUnits, ...archivedOrgUnits]
+        .map((o) => o.responsibleAccountId)
+        .filter((id): id is string => id !== null),
+    ),
   );
   const responsibleAccounts = await prisma.account.findMany({
     where: { id: { in: responsibleIds } },
@@ -133,6 +142,44 @@ export default async function OrgUnitsPage({
                 {orgUnit.expertiseTags.length > 0 && ` · ${orgUnit.expertiseTags.join(", ")}`}
                 {orgUnit.responsibleAccountId &&
                   ` · 책임 담당자: ${responsibleLabelById.get(orgUnit.responsibleAccountId) ?? orgUnit.responsibleAccountId}`}
+              </div>
+              <div style={{ marginTop: 6, display: "flex", gap: 12, alignItems: "center" }}>
+                <Link href={`/admin/org-units/${orgUnit.id}/edit`} style={{ fontSize: 13 }}>
+                  정보 수정
+                </Link>
+                <form method="POST" action={`/api/admin/org-units/${orgUnit.id}/archive`}>
+                  <button type="submit" style={{ fontSize: 13, padding: "4px 10px" }}>
+                    보관하기
+                  </button>
+                </form>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <h2 style={{ fontSize: 16, marginTop: 24 }}>보관된 기구</h2>
+      {archivedOrgUnits.length === 0 ? (
+        <p style={{ color: "#555555" }}>보관된 기구가 없습니다.</p>
+      ) : (
+        <ul style={{ listStyle: "none", padding: 0 }}>
+          {archivedOrgUnits.map((orgUnit) => (
+            <li key={orgUnit.id} style={{ borderBottom: "1px solid #e0e0e0", padding: "12px 0" }}>
+              <div>
+                <strong>{orgUnit.name}</strong>{" "}
+                <span style={{ fontSize: 12, color: "#888888" }}>{orgUnit.displayId}</span>
+              </div>
+              <div style={{ fontSize: 12, color: "#555555" }}>
+                {orgUnit.region && ` ${orgUnit.region}`}
+                {orgUnit.expertiseTags.length > 0 && ` · ${orgUnit.expertiseTags.join(", ")}`}
+                {orgUnit.archivedAt && ` · ${orgUnit.archivedAt.toISOString().slice(0, 10)} 보관됨`}
+              </div>
+              <div style={{ marginTop: 6 }}>
+                <form method="POST" action={`/api/admin/org-units/${orgUnit.id}/restore`}>
+                  <button type="submit" style={{ fontSize: 13, padding: "4px 10px" }}>
+                    복원
+                  </button>
+                </form>
               </div>
             </li>
           ))}

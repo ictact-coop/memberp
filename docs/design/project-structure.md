@@ -38,7 +38,8 @@ src/
         page.tsx              관리자 설정 허브 — 하위 도구로 이동하는 링크 모음
         invitations/page.tsx  초대 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 발급·재발송·취소
         roles/page.tsx        역할 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 역할 부여·종료
-        org-units/page.tsx    기구 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 기구 등록·목록
+        org-units/page.tsx    기구 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 기구 등록·목록·보관·복원
+        org-units/[id]/edit/page.tsx  기구 정보 수정 — 등록과 같은 필드
         audit-log/page.tsx    상태 이력 조회(SECRETARIAT/SYSTEM_ADMIN 전용) — AuditLog 조회·필터
       forbidden/page.tsx    로그인은 됐지만 역할·담당 범위가 안 맞을 때
     api/
@@ -87,6 +88,9 @@ src/
           [id]/revoke/route.ts       POST: 초대 취소
         org-units/
           create/route.ts            POST: 기구(Subject type=ORG_UNIT) 등록
+          [id]/update/route.ts       POST: 기구 정보 수정(등록과 같은 필드·검증)
+          [id]/archive/route.ts      POST: 기구 보관(archivedAt 채움, 삭제 아님)
+          [id]/restore/route.ts      POST: 기구 보관 복원(archivedAt을 null로)
   components/
     AppHeader.tsx        브랜드 로고(라임 배지 "IT" + 워드마크) — 모든 화면 상단에 고정
     BottomNav.tsx        모바일 기본 메뉴 (v0.2 §2.1): 홈/참여할 일/기록하기/우리 조합/내 정보
@@ -597,8 +601,24 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있고, `/api/admin/org-units/create`
   "이 기구를 관리하는 사람이 누구인지"를 기록하는 필드일 뿐, 그 계정에게 자동으로
   어떤 역할이나 권한 범위가 부여되지는 않는다 — 권한이 필요하면 역할 관리
   화면에서 별도로 부여해야 한다.
-- **정직하게 남겨둔 것**: 등록 후 정보 수정·보관(archive) 화면이 없다. 동명이인·
-  중복 기구를 정리하는 화면도 없다.
+
+**기구 정보 수정 (`/admin/org-units/[id]/edit`)** — 등록 화면과 같은 필드(이름·
+지역·전문영역·책임 담당자·공개범위)를 그대로 다시 보여주고 같은 검증을 쓴다.
+내 정보 수정과 같은 원칙으로 이름이 바뀌면 옛 이름을 `previousNames`에 남기고,
+변경 전·후 값을 `AuditLog`(entityType `"Subject"`, action `UPDATE`)에 남긴다 —
+사람 주체 수정(`/my/profile`)과 코드 경로를 공유하지는 않지만 같은 패턴을 그대로
+따랐다.
+
+**기구 보관·복원** — v0.1 §2.1 "삭제 대신 보관" 원칙을 여기서도 지킨다. 목록의
+"보관하기" 버튼은 그 기구의 `archivedAt`만 채우고(`AuditLog` action `ARCHIVE`),
+실제로 지우지는 않는다. 보관된 기구는 등록 화면 목록과 역할 관리 화면의 "기구"
+드롭다운 등 `archivedAt: null`을 거르는 모든 조회에서 자동으로 빠지지만, 이미
+그 기구를 가리키고 있던 `PermissionGrant.scopeId`나 `Need.raisedBySubjectId` 같은
+참조는 그대로 남는다 — 실제로 지우는 것이 아니기 때문이다. 목록 화면 아래
+"보관된 기구" 섹션에서 "복원" 버튼으로 언제든 되돌릴 수 있다(`archivedAt`을 다시
+`null`로, `AuditLog` action `UPDATE`) — 보관이 되돌릴 수 있는 결정이라는 것을
+실제로 보장한다.
+- **정직하게 남겨둔 것**: 동명이인·중복 기구를 정리(병합)하는 화면은 없다.
 
 ## 상태 이력 조회 화면 (`/admin/audit-log`)
 
@@ -688,8 +708,9 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있다(`/admin`의 다른 화면과 �
 
 - **역할별 화면 커스터마이징**: 지금은 "들어올 수 있는가/없는가"만 있고, 역할에 따라
   메뉴나 화면 내용 자체를 다르게 보여주는 것은 없다(v1.0 §8의 역할별 홈 화면 등).
-- **기구 정보 수정·보관 화면**: `/admin/org-units`는 등록·목록만 있다. 이름·지역
-  등을 고치거나 더 안 쓰는 기구를 보관(archive)하는 화면은 아직 없다.
+- **기구 동명이인·중복 정리**: 기구 정보 수정·보관(archive)·복원 화면은 이제
+  있다(`/admin/org-units`). 다만 실수로 중복 등록된 기구를 하나로 병합하는
+  화면은 없다 — 지금은 하나를 보관하고 참조를 손으로 정리해야 한다.
 - **역할 부여 이력 조회**: 종료된(과거) 역할 부여를 보는 화면이 없다 — DB에는 남아있다.
 - **주체 검색·연결 UI**: 초대 시 기존 주체를 찾아 미리 연결하는 화면이 없다 — 지금은
   항상 새 주체를 자동 생성한다. 동명이인·중복 주체 정리 화면도 없다.
@@ -879,6 +900,19 @@ npm run dev                  # http://localhost:3000
     `SUB-0005` 표시번호가 채번되고 태그 중복이 제거된 채 저장됨을 확인; 등록 직후
     역할 관리 화면(`/admin/roles`)의 "기구" 드롭다운에 곧바로 나타나 선택 가능함을
     확인(그 전까지 텍스트 입력이던 필드가 자동으로 선택형으로 바뀜)
+  - 기구 정보 수정·보관·복원(`/admin/org-units/[id]/edit`, `.../archive`,
+    `.../restore`): 역할 없는 계정은 수정 화면 접근·수정/보관/복원 API 호출 모두
+    `/forbidden`으로 차단; 이름 없이 제출하면 `error=invalid`, 존재하지 않는 책임
+    담당자 ID는 `error=invalid_responsible`로 거부; 이름·지역·전문영역·공개범위를
+    한 번에 바꾼 뒤 DB 반영과 이름 변경 시 `previousNames`에 옛 이름이 쌓임을
+    확인; 잘못된 열거형 값(존재하지 않는 `visibility`)은 조용히 기본값(TEAM)으로
+    대체됨을 확인; 보관하면 그 기구가 목록의 "등록된 기구"에서 "보관된 기구"로
+    옮겨가고 역할 관리 화면의 "기구" 드롭다운에서 즉시 사라짐을 확인; 복원하면
+    반대로 두 곳 모두에 즉시 다시 나타남을 확인; 이미 활성인 기구를 다시
+    복원하거나 존재하지 않는 ID로 보관을 시도해도 오류 없이 안전하게 무시됨을
+    확인; 수정 2건·보관 1건·복원 1건 모두 `AuditLog`(entityType `"Subject"`,
+    action `UPDATE`/`ARCHIVE`)에 정확한 전·후 값으로 남고 `/admin/audit-log`에서
+    필터링해 확인됨
   - 상태 이력 조회 화면(`/admin/audit-log`): SECRETARIAT/SYSTEM_ADMIN이 아닌 계정은
     `/forbidden`으로 차단; 활동을 승인 요청→반려(사유 입력)까지 실제로 전이시킨 뒤
     이 화면에서 `상태 변경`·`수정` 각 로그가 시각·행위자(이메일)·"status:
