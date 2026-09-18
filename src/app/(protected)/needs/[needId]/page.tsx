@@ -15,6 +15,7 @@ export const dynamic = "force-dynamic";
 
 const ERROR_MESSAGES: Record<string, string> = {
   forbidden: "담당 상담·수요만 처리할 수 있습니다.",
+  locked: "사업화·종결된 상담·수요는 수정할 수 없습니다.",
   invalid_transition: "지금 상태에서는 그 처리를 할 수 없습니다.",
   reason_required: "사유를 입력해야 합니다.",
   missing_next_action_date: "다음 행동일을 먼저 채워야 합니다.",
@@ -76,6 +77,13 @@ export default async function NeedDetailPage({
     <section>
       <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{need.displayId}</p>
       <h1 style={{ fontSize: 20, marginBottom: 8 }}>{need.title}</h1>
+      {isAssignee && need.status !== "CLOSED" && need.status !== "CONVERTED" && (
+        <p>
+          <Link href={`/needs/${need.id}/edit`} style={{ fontSize: 13, fontWeight: 600 }}>
+            상담·수요 정보 수정 →
+          </Link>
+        </p>
+      )}
 
       <div className="card">
         <span className={`badge ${NEED_STATUS_BADGE_TONE[need.status]}`}>
