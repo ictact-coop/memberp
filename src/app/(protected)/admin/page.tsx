@@ -17,8 +17,14 @@ export default async function AdminPage() {
       <p>
         <Link href="/admin/roles">역할 관리 →</Link>
       </p>
+      <p>
+        <Link href="/admin/org-units">기구 관리 →</Link>
+      </p>
+      <p>
+        <Link href="/admin/audit-log">상태 이력 조회 →</Link>
+      </p>
       <ScreenPlaceholder
-        title="계정 상태, 감사기록, 백업 상태"
+        title="계정 상태, 백업 상태"
         frCode="FR-01, FR-11"
         description="아직 구현되지 않았습니다."
       />

@@ -146,7 +146,7 @@ export default async function AdminRolesPage({
         <p style={{ fontSize: 12, color: "#888888", marginTop: 0, marginBottom: 12 }}>
           {orgUnits.length > 0
             ? "등록된 기구(Subject) 중에서 고릅니다."
-            : "등록된 기구가 아직 없어 ID를 직접 입력해야 합니다 — 기구 등록 화면이 생기면 선택형으로 바뀝니다."}
+            : "등록된 기구가 아직 없어 ID를 직접 입력해야 합니다 — /admin/org-units에서 기구를 먼저 등록하면 선택형으로 바뀝니다."}
         </p>
 
         <label htmlFor="startDate" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
