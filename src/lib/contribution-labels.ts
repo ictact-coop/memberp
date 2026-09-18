@@ -40,3 +40,12 @@ export const CONTRIBUTION_STATUS_LABELS: Record<ContributionStatus, string> = {
   SUPERSEDED: "이전 버전(새 버전으로 대체됨)",
   CANCELLED: "취소됨",
 };
+
+export const CONTRIBUTION_STATUS_BADGE_TONE: Record<ContributionStatus, string> = {
+  DRAFT: "badge-gray",
+  SUBMITTED: "badge-blue",
+  NEEDS_REVISION: "badge-yellow",
+  CONFIRMED: "badge-green",
+  SUPERSEDED: "badge-gray",
+  CANCELLED: "badge-red",
+};

@@ -19,6 +19,15 @@ export const NEED_STATUS_LABELS: Record<NeedStatus, string> = {
   CLOSED: "종결",
 };
 
+export const NEED_STATUS_BADGE_TONE: Record<NeedStatus, string> = {
+  RECEIVED: "badge-gray",
+  REVIEWING: "badge-blue",
+  PROPOSING: "badge-blue",
+  CONVERTED: "badge-green",
+  ON_HOLD: "badge-yellow",
+  CLOSED: "badge-gray",
+};
+
 export const NEED_CLOSE_TYPE_LABELS: Record<NeedCloseType, string> = {
   SELF_RESOLVED: "자체 해결",
   REFERRED_ELSEWHERE: "타 기관 연계",

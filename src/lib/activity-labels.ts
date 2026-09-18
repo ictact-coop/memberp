@@ -31,3 +31,15 @@ export const ACTIVITY_STATUS_LABELS: Record<ActivityStatus, string> = {
   ON_HOLD: "보류",
   CANCELLED: "취소",
 };
+
+// 상태 배지 색상 — globals.css의 .badge-* 클래스와 짝을 이룬다.
+export const ACTIVITY_STATUS_BADGE_TONE: Record<ActivityStatus, string> = {
+  PLANNING: "badge-gray",
+  PENDING_APPROVAL: "badge-yellow",
+  PREPARING: "badge-blue",
+  IN_PROGRESS: "badge-green",
+  COMPLETED: "badge-green",
+  CLOSED: "badge-gray",
+  ON_HOLD: "badge-yellow",
+  CANCELLED: "badge-red",
+};

@@ -9,6 +9,14 @@ export const ASSIGNMENT_STATUS_LABELS: Record<AssignmentStatus, string> = {
   CANCELLED: "취소됨",
 };
 
+export const ASSIGNMENT_STATUS_BADGE_TONE: Record<AssignmentStatus, string> = {
+  PROPOSED: "badge-yellow",
+  ACCEPTED: "badge-blue",
+  IN_PROGRESS: "badge-green",
+  ENDED: "badge-gray",
+  CANCELLED: "badge-red",
+};
+
 // v0.1 A05가 예시로 든 배정 역할. 자유 문자열 필드라 목록에 없는 값도 저장될 수 있다.
 export const ASSIGNMENT_ROLE_OPTIONS = [
   "책임",

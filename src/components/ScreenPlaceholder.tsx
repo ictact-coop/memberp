@@ -9,10 +9,14 @@ type ScreenPlaceholderProps = {
 export function ScreenPlaceholder({ title, frCode, description }: ScreenPlaceholderProps) {
   return (
     <section>
-      <p style={{ fontSize: 12, color: "#888888", marginBottom: 4 }}>{frCode}</p>
+      <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 4 }}>{frCode}</p>
       <h1 style={{ fontSize: 20, marginTop: 0 }}>{title}</h1>
-      <p style={{ color: "#555555" }}>{description}</p>
-      <p style={{ fontSize: 12, color: "#aaaaaa" }}>아직 구현되지 않은 화면입니다.</p>
+      <div className="card" style={{ marginTop: 12 }}>
+        <p style={{ color: "var(--color-text-muted)", margin: 0 }}>{description}</p>
+        <p style={{ fontSize: 12, color: "var(--color-text-faint)", marginBottom: 0 }}>
+          아직 구현되지 않은 화면입니다.
+        </p>
+      </div>
     </section>
   );
 }

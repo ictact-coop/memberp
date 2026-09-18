@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireActiveSession } from "@/lib/auth/session";
 import { ACTIVITY_OPERATIONS_ROLES, hasAnyRole } from "@/lib/auth/roles";
-import { ACTIVITY_STATUS_LABELS } from "@/lib/activity-labels";
+import { ACTIVITY_STATUS_BADGE_TONE, ACTIVITY_STATUS_LABELS } from "@/lib/activity-labels";
 
 export const dynamic = "force-dynamic";
 
@@ -22,25 +22,41 @@ export default async function ActivitiesPage() {
 
   return (
     <section>
-      <h1 style={{ fontSize: 20 }}>참여할 일</h1>
+      <h1 style={{ fontSize: 20, marginBottom: 4 }}>참여할 일</h1>
+      <p style={{ color: "var(--color-text-muted)", fontSize: 13, marginTop: 0 }}>
+        지금 참여할 수 있는 활동을 한눈에 봅니다.
+      </p>
       {canCreate && (
         <p>
-          <Link href="/activities/new">+ 새 활동 등록</Link>
+          <Link href="/activities/new" className="btn-link">
+            + 새 활동 등록
+          </Link>
         </p>
       )}
       {activities.length === 0 ? (
-        <p style={{ color: "#555555" }}>등록된 활동이 없습니다.</p>
+        <p className="card" style={{ color: "var(--color-text-muted)" }}>
+          등록된 활동이 없습니다.
+        </p>
       ) : (
-        <ul style={{ listStyle: "none", padding: 0 }}>
+        <ul className="card-list">
           {activities.map((activity) => (
-            <li
-              key={activity.id}
-              style={{ borderBottom: "1px solid #e0e0e0", padding: "12px 0" }}
-            >
-              <Link href={`/activities/${activity.id}`}>
+            <li key={activity.id} className="card">
+              <Link href={`/activities/${activity.id}`} style={{ textDecoration: "none" }}>
                 <strong>{activity.title}</strong>
-                <div style={{ fontSize: 12, color: "#888888" }}>
-                  {activity.displayId} · {ACTIVITY_STATUS_LABELS[activity.status]}
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginTop: 6,
+                    fontSize: 12,
+                    color: "var(--color-text-muted)",
+                  }}
+                >
+                  <span>{activity.displayId}</span>
+                  <span className={`badge ${ACTIVITY_STATUS_BADGE_TONE[activity.status]}`}>
+                    {ACTIVITY_STATUS_LABELS[activity.status]}
+                  </span>
                 </div>
               </Link>
             </li>

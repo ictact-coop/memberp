@@ -3,7 +3,12 @@ import Link from "next/link";
 import { NeedCloseType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireActiveSession } from "@/lib/auth/session";
-import { NEED_CHANNEL_LABELS, NEED_CLOSE_TYPE_LABELS, NEED_STATUS_LABELS } from "@/lib/need-labels";
+import {
+  NEED_CHANNEL_LABELS,
+  NEED_CLOSE_TYPE_LABELS,
+  NEED_STATUS_BADGE_TONE,
+  NEED_STATUS_LABELS,
+} from "@/lib/need-labels";
 import { NEED_TRANSITION_LABELS, availableNeedTransitions } from "@/lib/need-status";
 
 export const dynamic = "force-dynamic";
@@ -69,63 +74,93 @@ export default async function NeedDetailPage({
 
   return (
     <section>
-      <p style={{ fontSize: 12, color: "#888888" }}>{need.displayId}</p>
-      <h1 style={{ fontSize: 20 }}>{need.title}</h1>
-      <p style={{ color: "#555555" }}>{need.content}</p>
-      <dl>
-        <dt>상태</dt>
-        <dd>{NEED_STATUS_LABELS[need.status]}</dd>
-        <dt>접수 경로</dt>
-        <dd>{NEED_CHANNEL_LABELS[need.channel]}</dd>
-        <dt>접수일</dt>
-        <dd>{need.receivedAt.toISOString().slice(0, 10)}</dd>
-        {need.raisedBySubject && (
-          <>
-            <dt>제기한 사람·단체</dt>
-            <dd>{need.raisedBySubject.name}</dd>
-          </>
-        )}
-        {need.beneficiarySubject && (
-          <>
-            <dt>대상(수혜) 사람·단체</dt>
-            <dd>{need.beneficiarySubject.name}</dd>
-          </>
-        )}
-        {need.nextAction && (
-          <>
-            <dt>다음 행동(대안)</dt>
-            <dd>{need.nextAction}</dd>
-          </>
-        )}
-        {need.nextActionDate && (
-          <>
-            <dt>다음 행동일</dt>
-            <dd>{need.nextActionDate.toISOString().slice(0, 10)}</dd>
-          </>
-        )}
-        {need.closeType && (
-          <>
-            <dt>종결 유형</dt>
-            <dd>{NEED_CLOSE_TYPE_LABELS[need.closeType]}</dd>
-          </>
-        )}
-        {need.closeReason && (
-          <>
-            <dt>종결 사유</dt>
-            <dd>{need.closeReason}</dd>
-          </>
-        )}
-        <dt>관련 기여</dt>
-        <dd>{need._count.contributions}건</dd>
-      </dl>
+      <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{need.displayId}</p>
+      <h1 style={{ fontSize: 20, marginBottom: 8 }}>{need.title}</h1>
+
+      <div className="card">
+        <span className={`badge ${NEED_STATUS_BADGE_TONE[need.status]}`}>
+          {NEED_STATUS_LABELS[need.status]}
+        </span>
+        <p style={{ color: "var(--color-text-muted)", margin: "10px 0" }}>{need.content}</p>
+        <dl style={{ margin: 0, fontSize: 13, color: "var(--color-text-muted)", lineHeight: 1.9 }}>
+          <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>접수 경로</dt>
+          <dd style={{ display: "inline", margin: "0 0 0 6px" }}>{NEED_CHANNEL_LABELS[need.channel]}</dd>
+          <br />
+          <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>접수일</dt>
+          <dd style={{ display: "inline", margin: "0 0 0 6px" }}>
+            {need.receivedAt.toISOString().slice(0, 10)}
+          </dd>
+          {need.raisedBySubject && (
+            <>
+              <br />
+              <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>
+                제기한 사람·단체
+              </dt>
+              <dd style={{ display: "inline", margin: "0 0 0 6px" }}>{need.raisedBySubject.name}</dd>
+            </>
+          )}
+          {need.beneficiarySubject && (
+            <>
+              <br />
+              <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>
+                대상(수혜) 사람·단체
+              </dt>
+              <dd style={{ display: "inline", margin: "0 0 0 6px" }}>{need.beneficiarySubject.name}</dd>
+            </>
+          )}
+          {need.nextAction && (
+            <>
+              <br />
+              <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>
+                다음 행동(대안)
+              </dt>
+              <dd style={{ display: "inline", margin: "0 0 0 6px" }}>{need.nextAction}</dd>
+            </>
+          )}
+          {need.nextActionDate && (
+            <>
+              <br />
+              <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>
+                다음 행동일
+              </dt>
+              <dd style={{ display: "inline", margin: "0 0 0 6px" }}>
+                {need.nextActionDate.toISOString().slice(0, 10)}
+              </dd>
+            </>
+          )}
+          {need.closeType && (
+            <>
+              <br />
+              <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>
+                종결 유형
+              </dt>
+              <dd style={{ display: "inline", margin: "0 0 0 6px" }}>
+                {NEED_CLOSE_TYPE_LABELS[need.closeType]}
+              </dd>
+            </>
+          )}
+          {need.closeReason && (
+            <>
+              <br />
+              <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>
+                종결 사유
+              </dt>
+              <dd style={{ display: "inline", margin: "0 0 0 6px" }}>{need.closeReason}</dd>
+            </>
+          )}
+          <br />
+          <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>관련 기여</dt>
+          <dd style={{ display: "inline", margin: "0 0 0 6px" }}>{need._count.contributions}건</dd>
+        </dl>
+      </div>
 
       {need.activityLinks.length > 0 && (
         <>
-          <h2 style={{ fontSize: 16 }}>연결된 활동</h2>
-          <ul style={{ listStyle: "none", padding: 0 }}>
+          <h2 style={{ fontSize: 16, marginTop: 24 }}>연결된 활동</h2>
+          <ul className="card-list">
             {need.activityLinks.map((link) => (
-              <li key={link.id} style={{ padding: "4px 0" }}>
-                <Link href={`/activities/${link.activityId}`}>
+              <li key={link.id} className="card" style={{ padding: 12 }}>
+                <Link href={`/activities/${link.activityId}`} style={{ fontWeight: 600 }}>
                   {link.activity.displayId} · {link.activity.title}
                 </Link>
               </li>
@@ -134,13 +169,15 @@ export default async function NeedDetailPage({
         </>
       )}
 
-      {error && ERROR_MESSAGES[error] && <p style={{ color: "#c0392b" }}>{ERROR_MESSAGES[error]}</p>}
+      {error && ERROR_MESSAGES[error] && (
+        <p style={{ color: "var(--color-danger)", marginTop: 12 }}>{ERROR_MESSAGES[error]}</p>
+      )}
 
       {isAssignee && (
         <div style={{ marginTop: 16 }}>
           <h2 style={{ fontSize: 16 }}>상태 관리</h2>
           {actions.length === 0 ? (
-            <p style={{ color: "#555555" }}>
+            <p className="card" style={{ color: "var(--color-text-muted)" }}>
               {need.status === "CONVERTED" ? "사업화되어 더 진행할 처리가 없습니다." : "종결된 상담·수요입니다."}
             </p>
           ) : (
@@ -150,7 +187,8 @@ export default async function NeedDetailPage({
                   key={action}
                   method="POST"
                   action={`/api/needs/${need.id}/transition`}
-                  style={{ border: "1px solid #e0e0e0", padding: 10, borderRadius: 4 }}
+                  className="card"
+                  style={{ padding: 12 }}
                 >
                   <input type="hidden" name="action" value={action} />
 

@@ -47,9 +47,11 @@ export default async function EditActivityPage({
   return (
     <section>
       <h1 style={{ fontSize: 20 }}>활동 수정</h1>
-      {error && ERROR_MESSAGES[error] && <p style={{ color: "#c0392b" }}>{ERROR_MESSAGES[error]}</p>}
+      {error && ERROR_MESSAGES[error] && (
+        <p style={{ color: "var(--color-danger)" }}>{ERROR_MESSAGES[error]}</p>
+      )}
 
-      <form method="POST" action={`/api/activities/${activity.id}/update`}>
+      <form method="POST" action={`/api/activities/${activity.id}/update`} className="card">
         <label htmlFor="title" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
           활동명
         </label>

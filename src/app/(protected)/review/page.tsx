@@ -46,28 +46,37 @@ export default async function ReviewInboxPage({
 
   return (
     <section>
-      <h1 style={{ fontSize: 20 }}>담당자 확인함</h1>
-      {error && ERROR_MESSAGES[error] && <p style={{ color: "#c0392b" }}>{ERROR_MESSAGES[error]}</p>}
+      <h1 style={{ fontSize: 20, marginBottom: 4 }}>담당자 확인함</h1>
+      <p style={{ color: "var(--color-text-muted)", fontSize: 13, marginTop: 0 }}>
+        내가 담당하는 활동·상담의 확인 대기 기여입니다.
+      </p>
+      {error && ERROR_MESSAGES[error] && (
+        <p style={{ color: "var(--color-danger)" }}>{ERROR_MESSAGES[error]}</p>
+      )}
 
       {contributions.length === 0 ? (
-        <p style={{ color: "#555555" }}>확인 대기 중인 기여가 없습니다.</p>
+        <p className="card" style={{ color: "var(--color-text-muted)" }}>
+          확인 대기 중인 기여가 없습니다.
+        </p>
       ) : (
-        <ul style={{ listStyle: "none", padding: 0 }}>
+        <ul className="card-list">
           {contributions.map((contribution) => (
-            <li key={contribution.id} style={{ borderBottom: "1px solid #e0e0e0", padding: "12px 0" }}>
-              <div style={{ fontSize: 12, color: "#888888" }}>{contribution.displayId}</div>
-              <div>
+            <li key={contribution.id} className="card">
+              <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
+                {contribution.displayId}
+              </div>
+              <div style={{ fontWeight: 600, margin: "2px 0" }}>
                 {contribution.activity?.title ?? contribution.need?.title} ·{" "}
                 {contribution.contributorSubject.name}
               </div>
-              <div style={{ fontSize: 12, color: "#555555" }}>
+              <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
                 {CONTRIBUTION_TYPE_LABELS[contribution.contributionType]} ·{" "}
                 {contribution.minutes != null ? `${contribution.minutes}분` : "시간 미상"} ·{" "}
                 {COMPENSATION_BASIS_LABELS[contribution.compensationBasis]}
               </div>
-              <p style={{ margin: "4px 0" }}>{contribution.description}</p>
+              <p style={{ margin: "8px 0" }}>{contribution.description}</p>
               {contribution.revisionOfId && (
-                <p style={{ fontSize: 12, color: "#888888" }}>
+                <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
                   기존 확인 기록의 정정본입니다. 확인하면 이전 값을 대체합니다.
                 </p>
               )}
@@ -99,7 +108,7 @@ export default async function ReviewInboxPage({
                     placeholder="보완 요청 사유"
                     style={{ padding: 8, fontSize: 14 }}
                   />
-                  <button type="submit" style={{ padding: "8px 14px", fontSize: 14 }}>
+                  <button type="submit" className="btn-outline" style={{ padding: "8px 14px", fontSize: 14 }}>
                     보완 요청
                   </button>
                 </form>

@@ -42,7 +42,7 @@ export default async function NewContributionPage({
     return (
       <section>
         <h1 style={{ fontSize: 20 }}>기록하기</h1>
-        <p style={{ color: "#c0392b" }}>{ERROR_MESSAGES.no_subject}</p>
+        <p style={{ color: "var(--color-danger)" }}>{ERROR_MESSAGES.no_subject}</p>
       </section>
     );
   }
@@ -137,14 +137,16 @@ export default async function NewContributionPage({
   return (
     <section>
       <h1 style={{ fontSize: 20 }}>{heading}</h1>
-      {error && ERROR_MESSAGES[error] && <p style={{ color: "#c0392b" }}>{ERROR_MESSAGES[error]}</p>}
+      {error && ERROR_MESSAGES[error] && (
+        <p style={{ color: "var(--color-danger)" }}>{ERROR_MESSAGES[error]}</p>
+      )}
       {initial.revisionOfId && (
-        <p style={{ fontSize: 12, color: "#888888" }}>
+        <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
           확인된 기존 기록을 정정하는 새 버전입니다. 제출해 확인되면 이전 값을 대체합니다.
         </p>
       )}
 
-      <form method="POST" action="/api/contributions/save">
+      <form method="POST" action="/api/contributions/save" className="card">
         <input type="hidden" name="submissionKey" value={initial.submissionKey} />
         {initial.revisionOfId && (
           <input type="hidden" name="revisionOfId" value={initial.revisionOfId} />
@@ -261,27 +263,33 @@ export default async function NewContributionPage({
 
       <h2 style={{ fontSize: 16, marginTop: 24 }}>증빙 첨부</h2>
       {!canEditAttachments ? (
-        <p style={{ fontSize: 12, color: "#888888" }}>
+        <p className="card" style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
           첨부파일은 먼저 임시저장한 뒤, 내 기여 목록의 "이어 작성" 화면에서 추가할 수 있습니다.
         </p>
       ) : (
-        <>
-          <p style={{ fontSize: 12, color: "#888888" }}>
-            증거 수준: {EVIDENCE_LEVEL_LABELS[initial.evidenceLevel]}
-          </p>
+        <div className="card">
+          <span className="badge badge-blue">{EVIDENCE_LEVEL_LABELS[initial.evidenceLevel]}</span>
           {attachments.length === 0 ? (
-            <p style={{ fontSize: 12, color: "#888888" }}>아직 첨부한 파일이 없습니다.</p>
+            <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 0 }}>
+              아직 첨부한 파일이 없습니다.
+            </p>
           ) : (
-            <ul style={{ listStyle: "none", padding: 0 }}>
+            <ul style={{ listStyle: "none", padding: 0, marginTop: 10 }}>
               {attachments.map((attachment) => (
-                <li key={attachment.id} style={{ fontSize: 14, marginBottom: 4 }}>
-                  <a href={`/api/attachments/${attachment.id}/download`}>{attachment.fileName}</a>{" "}
+                <li key={attachment.id} style={{ fontSize: 14, marginBottom: 6 }}>
+                  <a href={`/api/attachments/${attachment.id}/download`} style={{ fontWeight: 600 }}>
+                    {attachment.fileName}
+                  </a>{" "}
                   <form
                     method="POST"
                     action={`/api/attachments/${attachment.id}/delete`}
                     style={{ display: "inline" }}
                   >
-                    <button type="submit" style={{ fontSize: 12, padding: "2px 8px" }}>
+                    <button
+                      type="submit"
+                      className="btn-outline"
+                      style={{ fontSize: 12, padding: "2px 8px" }}
+                    >
                       삭제
                     </button>
                   </form>
@@ -293,14 +301,14 @@ export default async function NewContributionPage({
             method="POST"
             action={`/api/contributions/${initial.contributionId}/attachments`}
             encType="multipart/form-data"
-            style={{ marginTop: 8 }}
+            style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}
           >
             <input type="file" name="file" accept="image/jpeg,image/png,image/webp,image/gif,application/pdf" />
-            <button type="submit" style={{ padding: "6px 12px", fontSize: 14, marginLeft: 8 }}>
+            <button type="submit" style={{ padding: "6px 12px", fontSize: 14 }}>
               첨부
             </button>
           </form>
-        </>
+        </div>
       )}
     </section>
   );

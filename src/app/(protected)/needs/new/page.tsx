@@ -40,9 +40,11 @@ export default async function NewNeedPage({
   return (
     <section>
       <h1 style={{ fontSize: 20 }}>새 상담·수요 접수</h1>
-      {error && ERROR_MESSAGES[error] && <p style={{ color: "#c0392b" }}>{ERROR_MESSAGES[error]}</p>}
+      {error && ERROR_MESSAGES[error] && (
+        <p style={{ color: "var(--color-danger)" }}>{ERROR_MESSAGES[error]}</p>
+      )}
 
-      <form method="POST" action="/api/needs/create">
+      <form method="POST" action="/api/needs/create" className="card">
         <label htmlFor="title" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
           제목
         </label>

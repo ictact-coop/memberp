@@ -23,10 +23,10 @@ export default async function TotpVerifyPage({
   return (
     <section>
       <h1 style={{ fontSize: 20 }}>2단계 인증</h1>
-      <p style={{ color: "#555555" }}>OTP 앱에 표시된 6자리 코드를 입력하세요.</p>
-      {error && <p style={{ color: "#c0392b" }}>코드가 올바르지 않습니다.</p>}
+      <p style={{ color: "var(--color-text-muted)" }}>OTP 앱에 표시된 6자리 코드를 입력하세요.</p>
+      {error && <p style={{ color: "var(--color-danger)" }}>코드가 올바르지 않습니다.</p>}
 
-      <form method="POST" action="/api/auth/totp/verify" style={{ marginBottom: 24 }}>
+      <form method="POST" action="/api/auth/totp/verify" className="card" style={{ marginBottom: 16 }}>
         <input type="hidden" name="mode" value="totp" />
         <label htmlFor="code" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
           인증 코드
@@ -45,8 +45,8 @@ export default async function TotpVerifyPage({
         </button>
       </form>
 
-      <details>
-        <summary style={{ fontSize: 14, color: "#555555" }}>
+      <details className="card">
+        <summary style={{ fontSize: 14, color: "var(--color-text-muted)" }}>
           기기를 분실했나요? 복구 코드로 로그인
         </summary>
         <form method="POST" action="/api/auth/totp/verify" style={{ marginTop: 12 }}>

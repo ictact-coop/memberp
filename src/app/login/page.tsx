@@ -24,11 +24,11 @@ export default async function LoginPage({
   return (
     <section>
       <h1 style={{ fontSize: 20 }}>로그인</h1>
-      <p style={{ color: "#555555" }}>
+      <p style={{ color: "var(--color-text-muted)" }}>
         가입할 때 등록한 이메일 주소로 로그인 링크를 보내드립니다.
       </p>
-      {errorMessage && <p style={{ color: "#c0392b" }}>{errorMessage}</p>}
-      <form method="POST" action="/api/auth/login">
+      {errorMessage && <p style={{ color: "var(--color-danger)" }}>{errorMessage}</p>}
+      <form method="POST" action="/api/auth/login" className="card">
         <label htmlFor="email" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
           이메일
         </label>

@@ -30,21 +30,24 @@ export default async function TotpSetupPage({
   return (
     <section>
       <h1 style={{ fontSize: 20 }}>2단계 인증 설정</h1>
-      <p style={{ color: "#555555" }}>
+      <p style={{ color: "var(--color-text-muted)" }}>
         이 계정은 역할상 2단계 인증이 필요합니다. Google Authenticator 등 OTP 앱으로 아래
         QR코드를 스캔한 뒤, 앱에 표시된 6자리 코드를 입력해 확인하세요.
       </p>
 
-      {/* eslint-disable-next-line @next/next/no-img-element -- 서버에서 생성한 data URL이라 next/image 최적화 대상이 아님 */}
-      <img src={qrDataUrl} alt="OTP 앱으로 스캔할 QR코드" width={200} height={200} />
+      <div className="card" style={{ textAlign: "center" }}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- 서버에서 생성한 data URL이라 next/image 최적화 대상이 아님 */}
+        <img src={qrDataUrl} alt="OTP 앱으로 스캔할 QR코드" width={200} height={200} />
+        <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 0 }}>
+          QR코드를 스캔할 수 없다면 이 코드를 직접 입력하세요: <code>{base32Secret}</code>
+        </p>
+      </div>
 
-      <p style={{ fontSize: 12, color: "#888888" }}>
-        QR코드를 스캔할 수 없다면 이 코드를 직접 입력하세요: <code>{base32Secret}</code>
-      </p>
+      {error && (
+        <p style={{ color: "var(--color-danger)" }}>코드가 올바르지 않습니다. 다시 시도하세요.</p>
+      )}
 
-      {error && <p style={{ color: "#c0392b" }}>코드가 올바르지 않습니다. 다시 시도하세요.</p>}
-
-      <form method="POST" action="/api/auth/totp/setup">
+      <form method="POST" action="/api/auth/totp/setup" className="card">
         <input type="hidden" name="secret" value={base32Secret} />
         <label htmlFor="code" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
           앱에 표시된 6자리 코드

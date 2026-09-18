@@ -7,7 +7,7 @@ import {
   ASSIGNMENT_STATUS_LABELS,
   REOPENABLE_ASSIGNMENT_STATUSES,
 } from "@/lib/assignment-labels";
-import { ACTIVITY_STATUS_LABELS, MISSION_LABELS } from "@/lib/activity-labels";
+import { ACTIVITY_STATUS_BADGE_TONE, ACTIVITY_STATUS_LABELS, MISSION_LABELS } from "@/lib/activity-labels";
 import {
   ACTIVITY_TRANSITION_LABELS,
   ACTIVITY_TRANSITION_REASON_LABELS,
@@ -65,36 +65,50 @@ export default async function ActivityDetailPage({
 
   return (
     <section>
-      <p style={{ fontSize: 12, color: "#888888" }}>{activity.displayId}</p>
-      <h1 style={{ fontSize: 20 }}>{activity.title}</h1>
-      <p style={{ color: "#555555" }}>{activity.purpose}</p>
-      {isManager && activity.status !== "CLOSED" && activity.status !== "CANCELLED" && (
-        <p>
-          <Link href={`/activities/${activity.id}/edit`}>활동 정보 수정</Link>
-        </p>
-      )}
-      <dl>
-        <dt>상태</dt>
-        <dd>{ACTIVITY_STATUS_LABELS[activity.status]}</dd>
-        <dt>미션</dt>
-        <dd>{activity.missions.map((mission) => MISSION_LABELS[mission]).join(", ") || "미지정"}</dd>
-        <dt>참여 배정</dt>
-        <dd>{activity.assignments.length}건</dd>
-        {activity.closeEvaluationNote && (
-          <>
-            <dt>종료 평가</dt>
-            <dd>{activity.closeEvaluationNote}</dd>
-          </>
-        )}
-      </dl>
+      <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{activity.displayId}</p>
+      <h1 style={{ fontSize: 20, marginBottom: 8 }}>{activity.title}</h1>
 
-      {error && ERROR_MESSAGES[error] && <p style={{ color: "#c0392b" }}>{ERROR_MESSAGES[error]}</p>}
+      <div className="card">
+        <span className={`badge ${ACTIVITY_STATUS_BADGE_TONE[activity.status]}`}>
+          {ACTIVITY_STATUS_LABELS[activity.status]}
+        </span>
+        <p style={{ color: "var(--color-text-muted)", margin: "10px 0" }}>{activity.purpose}</p>
+        <dl style={{ margin: 0, fontSize: 13, color: "var(--color-text-muted)" }}>
+          <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>미션</dt>
+          <dd style={{ display: "inline", margin: "0 0 0 6px" }}>
+            {activity.missions.map((mission) => MISSION_LABELS[mission]).join(", ") || "미지정"}
+          </dd>
+          <br />
+          <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>참여 배정</dt>
+          <dd style={{ display: "inline", margin: "0 0 0 6px" }}>{activity.assignments.length}건</dd>
+          {activity.closeEvaluationNote && (
+            <>
+              <br />
+              <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>
+                종료 평가
+              </dt>
+              <dd style={{ display: "inline", margin: "0 0 0 6px" }}>{activity.closeEvaluationNote}</dd>
+            </>
+          )}
+        </dl>
+        {isManager && activity.status !== "CLOSED" && activity.status !== "CANCELLED" && (
+          <p style={{ marginBottom: 0 }}>
+            <Link href={`/activities/${activity.id}/edit`} style={{ fontSize: 13, fontWeight: 600 }}>
+              활동 정보 수정 →
+            </Link>
+          </p>
+        )}
+      </div>
+
+      {error && ERROR_MESSAGES[error] && (
+        <p style={{ color: "var(--color-danger)", marginTop: 12 }}>{ERROR_MESSAGES[error]}</p>
+      )}
 
       {isManager && (
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginTop: 16 }}>
           <h2 style={{ fontSize: 16 }}>상태 관리</h2>
           {availableActivityTransitions(activity.status).length === 0 ? (
-            <p style={{ color: "#555555" }}>
+            <p className="card" style={{ color: "var(--color-text-muted)" }}>
               {activity.status === "CLOSED"
                 ? "종료된 활동입니다. 수정은 정정 이력으로 남겨야 합니다."
                 : "취소된 활동입니다."}
@@ -108,7 +122,8 @@ export default async function ActivityDetailPage({
                     key={transitionAction}
                     method="POST"
                     action={`/api/activities/${activity.id}/transition`}
-                    style={{ border: "1px solid #e0e0e0", padding: 10, borderRadius: 4 }}
+                    className="card"
+                    style={{ padding: 12 }}
                   >
                     <input type="hidden" name="action" value={transitionAction} />
                     {reasonLabel && (
@@ -155,24 +170,28 @@ export default async function ActivityDetailPage({
         </div>
       )}
 
-      <h2 style={{ fontSize: 16 }}>내 참여</h2>
+      <h2 style={{ fontSize: 16, marginTop: 24 }}>내 참여</h2>
       {!active.account.subjectId ? (
-        <p style={{ color: "#c0392b" }}>계정에 연결된 사람 정보가 없어 신청할 수 없습니다.</p>
+        <p style={{ color: "var(--color-danger)" }}>계정에 연결된 사람 정보가 없어 신청할 수 없습니다.</p>
       ) : myAssignment && !canApply ? (
-        <div>
-          <p>
+        <div className="card">
+          <p style={{ margin: 0 }}>
             {ASSIGNMENT_STATUS_LABELS[myAssignment.status]} · 역할: {myAssignment.role}
           </p>
           {myAssignment.status === "PROPOSED" && (
-            <form method="POST" action={`/api/activity-assignments/${myAssignment.id}/withdraw`}>
-              <button type="submit" style={{ padding: "8px 14px", fontSize: 14 }}>
+            <form
+              method="POST"
+              action={`/api/activity-assignments/${myAssignment.id}/withdraw`}
+              style={{ marginTop: 8 }}
+            >
+              <button type="submit" className="btn-outline" style={{ padding: "8px 14px", fontSize: 14 }}>
                 신청 철회
               </button>
             </form>
           )}
         </div>
       ) : (
-        <form method="POST" action="/api/activity-assignments/apply">
+        <form method="POST" action="/api/activity-assignments/apply" className="card">
           <input type="hidden" name="activityId" value={activity.id} />
           <label htmlFor="role" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
             역할
@@ -199,20 +218,24 @@ export default async function ActivityDetailPage({
         <>
           <h2 style={{ fontSize: 16, marginTop: 24 }}>신청 대기 ({pendingForManager.length})</h2>
           {pendingForManager.length === 0 ? (
-            <p style={{ color: "#555555" }}>대기 중인 신청이 없습니다.</p>
+            <p style={{ color: "var(--color-text-muted)" }}>대기 중인 신청이 없습니다.</p>
           ) : (
-            <ul style={{ listStyle: "none", padding: 0 }}>
+            <ul className="card-list">
               {pendingForManager.map((assignment) => (
-                <li key={assignment.id} style={{ borderBottom: "1px solid #e0e0e0", padding: "8px 0" }}>
+                <li key={assignment.id} className="card">
                   {assignment.subject.name} · {assignment.role}
-                  <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
                     <form method="POST" action={`/api/activity-assignments/${assignment.id}/accept`}>
                       <button type="submit" style={{ padding: "6px 12px", fontSize: 14 }}>
                         수락
                       </button>
                     </form>
                     <form method="POST" action={`/api/activity-assignments/${assignment.id}/reject`}>
-                      <button type="submit" style={{ padding: "6px 12px", fontSize: 14 }}>
+                      <button
+                        type="submit"
+                        className="btn-outline"
+                        style={{ padding: "6px 12px", fontSize: 14 }}
+                      >
                         거절
                       </button>
                     </form>
@@ -224,14 +247,18 @@ export default async function ActivityDetailPage({
 
           <h2 style={{ fontSize: 16, marginTop: 24 }}>참여 중 ({rosterForManager.length})</h2>
           {rosterForManager.length === 0 ? (
-            <p style={{ color: "#555555" }}>참여 중인 사람이 없습니다.</p>
+            <p style={{ color: "var(--color-text-muted)" }}>참여 중인 사람이 없습니다.</p>
           ) : (
-            <ul style={{ listStyle: "none", padding: 0 }}>
+            <ul className="card-list">
               {rosterForManager.map((assignment) => (
-                <li key={assignment.id} style={{ borderBottom: "1px solid #e0e0e0", padding: "8px 0" }}>
+                <li key={assignment.id} className="card">
                   {assignment.subject.name} · {assignment.role} · {ASSIGNMENT_STATUS_LABELS[assignment.status]}
                   <form method="POST" action={`/api/activity-assignments/${assignment.id}/end`}>
-                    <button type="submit" style={{ padding: "6px 12px", fontSize: 14, marginTop: 4 }}>
+                    <button
+                      type="submit"
+                      className="btn-outline"
+                      style={{ padding: "6px 12px", fontSize: 14, marginTop: 8 }}
+                    >
                       종료 처리
                     </button>
                   </form>
@@ -242,8 +269,10 @@ export default async function ActivityDetailPage({
         </>
       )}
 
-      <p style={{ fontSize: 12, color: "#aaaaaa", marginTop: 24 }}>
-        <a href={`/my/contributions/new?activityId=${activity.id}`}>기여 작성 →</a>
+      <p style={{ fontSize: 13, marginTop: 24 }}>
+        <a href={`/my/contributions/new?activityId=${activity.id}`} style={{ fontWeight: 600 }}>
+          기여 작성 →
+        </a>
       </p>
     </section>
   );

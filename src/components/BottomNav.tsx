@@ -23,8 +23,8 @@ export function BottomNav() {
         left: 0,
         right: 0,
         display: "flex",
-        borderTop: "1px solid #e0e0e0",
-        background: "#ffffff",
+        background: "var(--color-primary)",
+        boxShadow: "0 -1px 0 rgba(0,0,0,0.08)",
       }}
     >
       {NAV_ITEMS.map((item) => {
@@ -37,11 +37,11 @@ export function BottomNav() {
             style={{
               flex: 1,
               textAlign: "center",
-              padding: "12px 4px",
+              padding: "10px 4px 12px",
               fontSize: 12,
               textDecoration: "none",
-              fontWeight: active ? 700 : 400,
-              color: active ? "#1a1a1a" : "#888888",
+              fontWeight: active ? 700 : 500,
+              color: active ? "var(--color-accent)" : "rgba(255,255,255,0.65)",
             }}
           >
             {item.label}

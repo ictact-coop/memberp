@@ -35,29 +35,31 @@ export default async function MyProfilePage({
 
   return (
     <section>
-      <p style={{ fontSize: 12, color: "#888888" }}>FR-03</p>
+      <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>FR-03</p>
       <h1 style={{ fontSize: 20, marginTop: 0 }}>내 정보</h1>
-      <p style={{ color: "#555555" }}>로그인 계정: {active.account.email}</p>
+      <p style={{ color: "var(--color-text-muted)" }}>로그인 계정: {active.account.email}</p>
 
       <form method="POST" action="/api/auth/logout" style={{ marginBottom: 24 }}>
-        <button type="submit" style={{ padding: "10px 16px", fontSize: 16 }}>
+        <button type="submit" className="btn-outline" style={{ padding: "10px 16px", fontSize: 16 }}>
           로그아웃
         </button>
       </form>
 
       <h2 style={{ fontSize: 16 }}>연락처·관심 분야</h2>
-      {error && ERROR_MESSAGES[error] && <p style={{ color: "#c0392b" }}>{ERROR_MESSAGES[error]}</p>}
+      {error && ERROR_MESSAGES[error] && (
+        <p style={{ color: "var(--color-danger)" }}>{ERROR_MESSAGES[error]}</p>
+      )}
 
       {!subject ? (
-        <p style={{ color: "#c0392b" }}>{ERROR_MESSAGES.no_subject}</p>
+        <p style={{ color: "var(--color-danger)" }}>{ERROR_MESSAGES.no_subject}</p>
       ) : (
         <>
-          <p style={{ fontSize: 12, color: "#888888" }}>
+          <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
             활동 상태: {SUBJECT_STATUS_LABELS[subject.status]}
             {subject.confirmedAt && ` · 최근 확인일: ${subject.confirmedAt.toISOString().slice(0, 10)}`}
           </p>
 
-          <form method="POST" action="/api/profile/update">
+          <form method="POST" action="/api/profile/update" className="card">
             <label htmlFor="name" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
               이름
             </label>
@@ -69,7 +71,7 @@ export default async function MyProfilePage({
               style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
             />
             {subject.previousNames.length > 0 && (
-              <p style={{ fontSize: 12, color: "#888888", marginTop: -8, marginBottom: 12 }}>
+              <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: -8, marginBottom: 12 }}>
                 이전 이름: {subject.previousNames.join(", ")}
               </p>
             )}

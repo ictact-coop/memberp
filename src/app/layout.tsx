@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { AppHeader } from "@/components/AppHeader";
 
 export const metadata: Metadata = {
   title: "공동체IT 멤버십",
@@ -18,8 +19,18 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko">
+      <head>
+        <link
+          rel="stylesheet"
+          as="style"
+          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css"
+        />
+      </head>
       <body>
-        <main>{children}</main>
+        <main>
+          <AppHeader />
+          {children}
+        </main>
       </body>
     </html>
   );
