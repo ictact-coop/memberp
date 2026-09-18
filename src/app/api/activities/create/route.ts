@@ -26,6 +26,8 @@ export async function POST(request: Request) {
   const missionValues = formData.getAll("missions");
   const plannedStartDateRaw = formData.get("plannedStartDate");
   const plannedEndDateRaw = formData.get("plannedEndDate");
+  const parentActivityIdRaw = formData.get("parentActivityId");
+  const budgetBaselineRaw = formData.get("budgetBaseline");
 
   const isValidManagementType =
     typeof managementTypeRaw === "string" &&
@@ -66,6 +68,21 @@ export async function POST(request: Request) {
     return NextResponse.redirect(new URL("/activities/new?error=invalid_dates", request.url));
   }
 
+  const parentActivityId =
+    typeof parentActivityIdRaw === "string" && parentActivityIdRaw ? parentActivityIdRaw : null;
+  if (parentActivityId) {
+    const parent = await prisma.activity.findUnique({ where: { id: parentActivityId } });
+    if (!parent) {
+      return NextResponse.redirect(new URL("/activities/new?error=invalid_parent", request.url));
+    }
+  }
+
+  const budgetBaseline =
+    typeof budgetBaselineRaw === "string" && budgetBaselineRaw ? budgetBaselineRaw : null;
+  if (budgetBaseline && (Number.isNaN(Number(budgetBaseline)) || Number(budgetBaseline) < 0)) {
+    return NextResponse.redirect(new URL("/activities/new?error=invalid_budget", request.url));
+  }
+
   const activity = await prisma.$transaction(async (tx) => {
     const displayId = await nextDisplayId(tx, "ACT");
     return tx.activity.create({
@@ -79,6 +96,8 @@ export async function POST(request: Request) {
         visibility,
         plannedStartDate,
         plannedEndDate,
+        parentActivityId,
+        budgetBaseline,
         status: "PLANNING",
         createdBy: active.account.id,
       },

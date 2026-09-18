@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { ActivityManagementType, Mission, Visibility } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getActiveSession } from "@/lib/auth/session";
+import { getSelfAndDescendantActivityIds } from "@/lib/activity-hierarchy";
 
 // FR-04 활동 수정. 등록(create)과 같은 필수 필드 검증을 쓴다. 권한과 잠금 규칙은
 // 상태 전이와 같은 원칙: 그 활동의 managerAccountId만, 그리고 종료·취소된 활동은
@@ -33,6 +34,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
   const missionValues = formData.getAll("missions");
   const plannedStartDateRaw = formData.get("plannedStartDate");
   const plannedEndDateRaw = formData.get("plannedEndDate");
+  const parentActivityIdRaw = formData.get("parentActivityId");
+  const budgetBaselineRaw = formData.get("budgetBaseline");
 
   const isValidManagementType =
     typeof managementTypeRaw === "string" &&
@@ -77,6 +80,32 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
     );
   }
 
+  const parentActivityId =
+    typeof parentActivityIdRaw === "string" && parentActivityIdRaw ? parentActivityIdRaw : null;
+  if (parentActivityId) {
+    const parent = await prisma.activity.findUnique({ where: { id: parentActivityId } });
+    if (!parent) {
+      return NextResponse.redirect(
+        new URL(`/activities/${activityId}/edit?error=invalid_parent`, request.url),
+      );
+    }
+    // 자기 자신 또는 자신의 하위 활동을 상위 활동으로 지정하면 순환(A→B→A)이 생긴다.
+    const forbiddenParentIds = await getSelfAndDescendantActivityIds(prisma, activityId);
+    if (forbiddenParentIds.has(parentActivityId)) {
+      return NextResponse.redirect(
+        new URL(`/activities/${activityId}/edit?error=invalid_parent_cycle`, request.url),
+      );
+    }
+  }
+
+  const budgetBaseline =
+    typeof budgetBaselineRaw === "string" && budgetBaselineRaw ? budgetBaselineRaw : null;
+  if (budgetBaseline && (Number.isNaN(Number(budgetBaseline)) || Number(budgetBaseline) < 0)) {
+    return NextResponse.redirect(
+      new URL(`/activities/${activityId}/edit?error=invalid_budget`, request.url),
+    );
+  }
+
   await prisma.$transaction(async (tx) => {
     await tx.activity.update({
       where: { id: activityId },
@@ -89,6 +118,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
         visibility,
         plannedStartDate,
         plannedEndDate,
+        parentActivityId,
+        budgetBaseline,
         updatedBy: active.account.id,
       },
     });
@@ -107,6 +138,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
           visibility: activity.visibility,
           plannedStartDate: activity.plannedStartDate,
           plannedEndDate: activity.plannedEndDate,
+          parentActivityId: activity.parentActivityId,
+          budgetBaseline: activity.budgetBaseline,
         },
         afterData: {
           title: title.trim(),
@@ -117,6 +150,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
           visibility,
           plannedStartDate,
           plannedEndDate,
+          parentActivityId,
+          budgetBaseline,
         },
       },
     });

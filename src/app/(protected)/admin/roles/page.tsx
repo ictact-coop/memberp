@@ -26,7 +26,7 @@ export default async function AdminRolesPage({
   const { error } = await searchParams;
 
   const now = new Date();
-  const [accounts, activities, orgUnits] = await Promise.all([
+  const [accounts, activities, orgUnits, pastGrants] = await Promise.all([
     prisma.account.findMany({
       orderBy: { createdAt: "asc" },
       take: 200,
@@ -50,6 +50,14 @@ export default async function AdminRolesPage({
       where: { type: "ORG_UNIT", archivedAt: null },
       orderBy: { name: "asc" },
       select: { id: true, displayId: true, name: true },
+    }),
+    // 역할 부여 이력 — endDate가 지난(=이미 끝난) 부여만 "지난 이력"으로 본다.
+    // "종료" 버튼은 endDate를 오늘로 채우는 것이므로 그 즉시 여기로 넘어온다.
+    prisma.permissionGrant.findMany({
+      where: { endDate: { lt: now } },
+      orderBy: { endDate: "desc" },
+      take: 200,
+      include: { account: { select: { email: true, phone: true, subject: { select: { name: true } } } } },
     }),
   ]);
 
@@ -211,6 +219,28 @@ export default async function AdminRolesPage({
           </li>
         ))}
       </ul>
+
+      <h2 style={{ fontSize: 16, marginTop: 24 }}>지난 역할 부여 이력</h2>
+      {pastGrants.length === 0 ? (
+        <p style={{ color: "#888888" }}>끝난 역할 부여가 없습니다.</p>
+      ) : (
+        <ul style={{ listStyle: "none", padding: 0 }}>
+          {pastGrants.map((grant) => (
+            <li key={grant.id} style={{ fontSize: 14, borderBottom: "1px solid #e0e0e0", padding: "8px 0" }}>
+              <strong>{grant.account.email ?? grant.account.phone}</strong>
+              {grant.account.subject?.name ? ` (${grant.account.subject.name})` : ""} ·{" "}
+              {ROLE_LABELS[grant.role]}
+              {(() => {
+                const label = scopeLabel(grant.scopeType, grant.scopeId);
+                return label ? ` — ${label}` : "";
+              })()}
+              <div style={{ fontSize: 12, color: "#888888" }}>
+                {grant.startDate.toISOString().slice(0, 10)} ~ {grant.endDate!.toISOString().slice(0, 10)}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

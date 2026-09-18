@@ -2,11 +2,15 @@ import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireActiveSession } from "@/lib/auth/session";
 import { MANAGEMENT_TYPE_LABELS, MISSION_LABELS, VISIBILITY_LABELS } from "@/lib/activity-labels";
+import { getSelfAndDescendantActivityIds } from "@/lib/activity-hierarchy";
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid: "제목·목적·유형·책임자·미션(1개 이상)을 모두 입력하세요.",
   invalid_manager: "선택한 책임자 계정을 확인할 수 없습니다.",
   invalid_dates: "종료 예정일은 시작 예정일보다 빠를 수 없습니다.",
+  invalid_parent: "선택한 상위 활동을 확인할 수 없습니다.",
+  invalid_parent_cycle: "그 활동을 상위 활동으로 지정하면 순환이 생깁니다.",
+  invalid_budget: "예산은 0 이상의 숫자여야 합니다.",
 };
 
 function toDateInputValue(date: Date | null): string {
@@ -38,11 +42,21 @@ export default async function EditActivityPage({
     redirect(`/activities/${activityId}?error=locked`);
   }
 
-  const accounts = await prisma.account.findMany({
-    where: { status: "ACTIVE" },
-    orderBy: { email: "asc" },
-    include: { subject: { select: { name: true } } },
-  });
+  const [accounts, allActivities] = await Promise.all([
+    prisma.account.findMany({
+      where: { status: "ACTIVE" },
+      orderBy: { email: "asc" },
+      include: { subject: { select: { name: true } } },
+    }),
+    prisma.activity.findMany({
+      where: { archivedAt: null },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, displayId: true, title: true },
+    }),
+  ]);
+  // 자기 자신과 모든 하위 활동은 상위 활동 후보에서 뺀다 — 순환(A→B→A) 방지.
+  const excludedParentIds = await getSelfAndDescendantActivityIds(prisma, activityId);
+  const parentCandidates = allActivities.filter((candidate) => !excludedParentIds.has(candidate.id));
 
   return (
     <section>
@@ -105,6 +119,36 @@ export default async function EditActivityPage({
             </label>
           ))}
         </fieldset>
+
+        <label htmlFor="parentActivityId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+          상위 활동 (선택)
+        </label>
+        <select
+          id="parentActivityId"
+          name="parentActivityId"
+          defaultValue={activity.parentActivityId ?? ""}
+          style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
+        >
+          <option value="">선택 안 함</option>
+          {parentCandidates.map((candidate) => (
+            <option key={candidate.id} value={candidate.id}>
+              {candidate.displayId} · {candidate.title}
+            </option>
+          ))}
+        </select>
+
+        <label htmlFor="budgetBaseline" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+          예산 (선택, 원)
+        </label>
+        <input
+          id="budgetBaseline"
+          name="budgetBaseline"
+          type="number"
+          min="0"
+          step="0.01"
+          defaultValue={activity.budgetBaseline?.toString() ?? ""}
+          style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
+        />
 
         <label htmlFor="managerAccountId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
           책임자

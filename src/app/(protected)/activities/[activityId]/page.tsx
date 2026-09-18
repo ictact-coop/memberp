@@ -45,6 +45,12 @@ export default async function ActivityDetailPage({
         include: { subject: { select: { name: true } } },
         orderBy: { createdAt: "desc" },
       },
+      parentActivity: { select: { id: true, displayId: true, title: true } },
+      childActivities: {
+        where: { archivedAt: null },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, displayId: true, title: true },
+      },
     },
   });
 
@@ -81,6 +87,28 @@ export default async function ActivityDetailPage({
           <br />
           <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>참여 배정</dt>
           <dd style={{ display: "inline", margin: "0 0 0 6px" }}>{activity.assignments.length}건</dd>
+          {activity.parentActivity && (
+            <>
+              <br />
+              <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>
+                상위 활동
+              </dt>
+              <dd style={{ display: "inline", margin: "0 0 0 6px" }}>
+                <Link href={`/activities/${activity.parentActivity.id}`}>
+                  {activity.parentActivity.displayId} · {activity.parentActivity.title}
+                </Link>
+              </dd>
+            </>
+          )}
+          {activity.budgetBaseline !== null && (
+            <>
+              <br />
+              <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>예산</dt>
+              <dd style={{ display: "inline", margin: "0 0 0 6px" }}>
+                {Number(activity.budgetBaseline).toLocaleString("ko-KR")}원
+              </dd>
+            </>
+          )}
           {activity.closeEvaluationNote && (
             <>
               <br />
@@ -99,6 +127,21 @@ export default async function ActivityDetailPage({
           </p>
         )}
       </div>
+
+      {activity.childActivities.length > 0 && (
+        <>
+          <h2 style={{ fontSize: 16, marginTop: 24 }}>하위 활동</h2>
+          <ul className="card-list">
+            {activity.childActivities.map((child) => (
+              <li key={child.id} className="card" style={{ padding: 12 }}>
+                <Link href={`/activities/${child.id}`} style={{ fontWeight: 600 }}>
+                  {child.displayId} · {child.title}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
       {error && ERROR_MESSAGES[error] && (
         <p style={{ color: "var(--color-danger)", marginTop: 12 }}>{ERROR_MESSAGES[error]}</p>

@@ -6,11 +6,12 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid: "제목·목적·유형·책임자·미션(1개 이상)을 모두 입력하세요.",
   invalid_manager: "선택한 책임자 계정을 확인할 수 없습니다.",
   invalid_dates: "종료 예정일은 시작 예정일보다 빠를 수 없습니다.",
+  invalid_parent: "선택한 상위 활동을 확인할 수 없습니다.",
+  invalid_budget: "예산은 0 이상의 숫자여야 합니다.",
 };
 
 // 활동 등록 — FR-04. v0.1 A01: 유형·미션(1개 이상)·목적·책임자가 필수다.
-// 상위 활동 지정, 예산 등은 아직 없다(다음 작업) — R1 FR-04 검수 기준(담당자·유형·
-// 기간·공개범위·상태)에 맞춰 최소로 시작한다.
+// 상위 활동·예산은 선택 입력이다(R1 FR-04 최소 검수 기준 이후 보강).
 export default async function NewActivityPage({
   searchParams,
 }: {
@@ -19,11 +20,18 @@ export default async function NewActivityPage({
   await requireRole(ACTIVITY_OPERATIONS_ROLES);
   const { error } = await searchParams;
 
-  const accounts = await prisma.account.findMany({
-    where: { status: "ACTIVE" },
-    orderBy: { email: "asc" },
-    include: { subject: { select: { name: true } } },
-  });
+  const [accounts, activities] = await Promise.all([
+    prisma.account.findMany({
+      where: { status: "ACTIVE" },
+      orderBy: { email: "asc" },
+      include: { subject: { select: { name: true } } },
+    }),
+    prisma.activity.findMany({
+      where: { archivedAt: null },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, displayId: true, title: true },
+    }),
+  ]);
 
   return (
     <section>
@@ -77,6 +85,35 @@ export default async function NewActivityPage({
             </label>
           ))}
         </fieldset>
+
+        <label htmlFor="parentActivityId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+          상위 활동 (선택)
+        </label>
+        <select
+          id="parentActivityId"
+          name="parentActivityId"
+          defaultValue=""
+          style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
+        >
+          <option value="">선택 안 함</option>
+          {activities.map((activity) => (
+            <option key={activity.id} value={activity.id}>
+              {activity.displayId} · {activity.title}
+            </option>
+          ))}
+        </select>
+
+        <label htmlFor="budgetBaseline" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+          예산 (선택, 원)
+        </label>
+        <input
+          id="budgetBaseline"
+          name="budgetBaseline"
+          type="number"
+          min="0"
+          step="0.01"
+          style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
+        />
 
         <label htmlFor="managerAccountId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
           책임자
