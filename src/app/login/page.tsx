@@ -5,6 +5,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_email: "올바른 이메일 주소를 입력하세요.",
   invalid_token: "링크가 만료되었거나 이미 사용되었습니다. 다시 요청하세요.",
   already_registered: "이미 가입된 이메일입니다. 로그인을 이용하세요.",
+  prelink_conflict: "이 초대가 연결하려던 사람 정보가 이미 다른 계정과 연결되었습니다. 사무국에 문의하세요.",
 };
 
 // FR-01: 이미 로그인된 사람이 다시 /login에 오면 헷갈리지 않도록 홈으로 보낸다.

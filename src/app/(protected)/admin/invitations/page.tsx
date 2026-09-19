@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireRole } from "@/lib/auth/roles";
 import { prisma } from "@/lib/prisma";
 import { ROLE_LABELS } from "@/lib/role-labels";
@@ -6,6 +7,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_email: "올바른 이메일 주소를 입력하세요.",
   already_registered: "이미 가입된 이메일입니다. 역할 관리에서 역할을 부여하세요.",
   already_invited: "이미 처리 대기 중인 초대장이 있습니다. 재발송을 이용하세요.",
+  invalid_subject: "선택한 사람을 확인할 수 없습니다.",
+  subject_already_invited: "그 사람은 이미 다른 대기 중인 초대에 연결되어 있습니다.",
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -24,10 +27,10 @@ function formatDate(date: Date): string {
 export default async function AdminInvitationsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; prelinked?: string }>;
 }) {
   await requireRole(["SECRETARIAT", "SYSTEM_ADMIN"]);
-  const { error } = await searchParams;
+  const { error, prelinked } = await searchParams;
 
   const invitations = await prisma.invitation.findMany({
     orderBy: { createdAt: "desc" },
@@ -42,6 +45,28 @@ export default async function AdminInvitationsPage({
     select: { id: true, email: true },
   });
   const accountEmailById = new Map(acceptedAccounts.map((account) => [account.id, account.email]));
+
+  // 미리 연결할 수 있는 사람 = 계정이 아직 없는 사람 주체. 이미 다른 대기 중인
+  // 초대에 연결된 사람도 빼서, 같은 사람을 두 초대가 동시에 노리는 상황을
+  // 화면에서부터 막는다(레이스는 API에서 한 번 더 확인).
+  const prelinkedIds = invitations
+    .filter((i) => i.status === "PENDING")
+    .map((i) => i.prelinkedSubjectId)
+    .filter((id): id is string => id !== null);
+  const prelinkCandidates = await prisma.subject.findMany({
+    where: {
+      type: "PERSON",
+      archivedAt: null,
+      account: null,
+      id: { notIn: prelinkedIds },
+    },
+    orderBy: { name: "asc" },
+  });
+  const prelinkedSubjects = await prisma.subject.findMany({
+    where: { id: { in: invitations.map((i) => i.prelinkedSubjectId).filter((id): id is string => id !== null) } },
+    select: { id: true, displayId: true, name: true },
+  });
+  const prelinkedSubjectById = new Map(prelinkedSubjects.map((s) => [s.id, s]));
 
   const now = new Date();
 
@@ -70,7 +95,7 @@ export default async function AdminInvitationsPage({
           id="suggestedRole"
           name="suggestedRole"
           defaultValue=""
-          style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 16 }}
+          style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
         >
           <option value="">선택 안 함(조합원)</option>
           {Object.entries(ROLE_LABELS).map(([value, label]) => (
@@ -79,6 +104,27 @@ export default async function AdminInvitationsPage({
             </option>
           ))}
         </select>
+
+        <label htmlFor="prelinkedSubjectId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+          미리 연결할 사람 (선택) — 고르지 않으면 가입 시 확인 대기 상태로 새로 만들어집니다
+        </label>
+        <select
+          id="prelinkedSubjectId"
+          name="prelinkedSubjectId"
+          defaultValue={prelinked ?? ""}
+          style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 4 }}
+        >
+          <option value="">선택 안 함(새로 만들기)</option>
+          {prelinkCandidates.map((subject) => (
+            <option key={subject.id} value={subject.id}>
+              {subject.displayId} · {subject.name}
+            </option>
+          ))}
+        </select>
+        <p style={{ fontSize: 12, color: "#888888", marginTop: 0, marginBottom: 16 }}>
+          목록에 없는 사람이라면 <Link href="/admin/subjects/new">사람 미리 등록</Link>에서 먼저
+          만드세요.
+        </p>
 
         <button type="submit" style={{ padding: "10px 16px", fontSize: 16 }}>
           초대 보내기
@@ -107,6 +153,13 @@ export default async function AdminInvitationsPage({
                 <div style={{ fontSize: 12, color: "#888888" }}>
                   {statusLabel} · 만료일 {formatDate(invitation.expiresAt)}
                   {acceptedEmail && ` · 가입 계정: ${acceptedEmail}`}
+                  {invitation.prelinkedSubjectId &&
+                    (() => {
+                      const subject = prelinkedSubjectById.get(invitation.prelinkedSubjectId);
+                      return subject
+                        ? ` · 미리 연결: ${subject.displayId} · ${subject.name}`
+                        : "";
+                    })()}
                 </div>
 
                 {isPending && (
