@@ -3,6 +3,7 @@ import { Visibility } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getActiveSession } from "@/lib/auth/session";
 import { hasAnyRole } from "@/lib/auth/roles";
+import { isAllowedControlledValue } from "@/lib/classification-labels";
 
 const ADMIN_ROLES = ["SECRETARIAT", "SYSTEM_ADMIN"] as const;
 
@@ -26,7 +27,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const formData = await request.formData();
   const nameRaw = formData.get("name");
   const regionRaw = formData.get("region");
-  const expertiseTagsRaw = formData.get("expertiseTags");
+  const expertiseTagValues = formData.getAll("expertiseTags");
   const responsibleAccountIdRaw = formData.get("responsibleAccountId");
   const visibilityRaw = formData.get("visibility");
 
@@ -48,11 +49,30 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     }
   }
 
+  // 지역·전문영역/관심은 분류표 기반 선택형 — 현재 활성 분류표 값이거나, 이 기구가
+  // 이미 갖고 있던 레거시 값이어야 한다(src/lib/classification-labels.ts 참고).
+  const [regionOptions, expertiseOptions] = await Promise.all([
+    prisma.classification.findMany({ where: { domain: "REGION", active: true }, select: { label: true } }),
+    prisma.classification.findMany({ where: { domain: "EXPERTISE", active: true }, select: { label: true } }),
+  ]);
+  const allowedRegions = new Set(regionOptions.map((o) => o.label));
+  const allowedExpertise = new Set(expertiseOptions.map((o) => o.label));
+  const previousRegion = new Set(orgUnit.region ? [orgUnit.region] : []);
+  const previousExpertiseTags = new Set(orgUnit.expertiseTags);
+
   const region = typeof regionRaw === "string" && regionRaw.trim() ? regionRaw.trim() : null;
-  const expertiseTags =
-    typeof expertiseTagsRaw === "string"
-      ? Array.from(new Set(expertiseTagsRaw.split(",").map((tag) => tag.trim()).filter(Boolean)))
-      : [];
+  if (region && !isAllowedControlledValue(region, allowedRegions, previousRegion)) {
+    return NextResponse.redirect(new URL(`/admin/org-units/${id}/edit?error=invalid_region`, request.url));
+  }
+  const expertiseTags = Array.from(
+    new Set(expertiseTagValues.filter((v): v is string => typeof v === "string" && v.trim() !== "")),
+  );
+  if (expertiseTags.some((tag) => !isAllowedControlledValue(tag, allowedExpertise, previousExpertiseTags))) {
+    return NextResponse.redirect(
+      new URL(`/admin/org-units/${id}/edit?error=invalid_expertise_tag`, request.url),
+    );
+  }
+
   const visibility: Visibility =
     typeof visibilityRaw === "string" && (Object.values(Visibility) as string[]).includes(visibilityRaw)
       ? (visibilityRaw as Visibility)

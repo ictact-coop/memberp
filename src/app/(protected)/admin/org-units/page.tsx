@@ -7,6 +7,8 @@ import { SUBJECT_STATUS_LABELS } from "@/lib/subject-labels";
 const ERROR_MESSAGES: Record<string, string> = {
   invalid: "기구 이름을 입력하세요.",
   invalid_responsible: "선택한 책임 담당자 계정을 확인할 수 없습니다.",
+  invalid_region: "선택한 지역을 확인할 수 없습니다.",
+  invalid_expertise_tag: "선택한 전문영역·관심 중 확인할 수 없는 값이 있습니다.",
 };
 
 // 기구(Subject type=ORG_UNIT) 등록 — v0.1 P01 "유형: 사람/법인·외부단체/내부팀/
@@ -21,7 +23,7 @@ export default async function OrgUnitsPage({
   await requireRole(["SECRETARIAT", "SYSTEM_ADMIN"]);
   const { error } = await searchParams;
 
-  const [orgUnits, archivedOrgUnits, accounts] = await Promise.all([
+  const [orgUnits, archivedOrgUnits, accounts, regionOptions, expertiseOptions] = await Promise.all([
     prisma.subject.findMany({
       where: { type: "ORG_UNIT", archivedAt: null },
       orderBy: { name: "asc" },
@@ -34,6 +36,11 @@ export default async function OrgUnitsPage({
       where: { status: "ACTIVE" },
       orderBy: { email: "asc" },
       select: { id: true, email: true, phone: true },
+    }),
+    prisma.classification.findMany({ where: { domain: "REGION", active: true }, orderBy: { label: "asc" } }),
+    prisma.classification.findMany({
+      where: { domain: "EXPERTISE", active: true },
+      orderBy: { label: "asc" },
     }),
   ]);
 
@@ -72,20 +79,41 @@ export default async function OrgUnitsPage({
         <label htmlFor="region" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
           지역 (선택)
         </label>
-        <input
+        <select
           id="region"
           name="region"
+          defaultValue=""
           style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
-        />
+        >
+          <option value="">선택 안 함</option>
+          {regionOptions.map((option) => (
+            <option key={option.id} value={option.label}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        {regionOptions.length === 0 && (
+          <p style={{ fontSize: 12, color: "#888888", marginTop: -8, marginBottom: 12 }}>
+            등록된 지역 분류가 없습니다 — <Link href="/admin/classifications">분류 관리</Link>에서 먼저
+            등록하세요.
+          </p>
+        )}
 
-        <label htmlFor="expertiseTags" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
-          전문영역·관심 (선택, 쉼표로 구분)
-        </label>
-        <input
-          id="expertiseTags"
-          name="expertiseTags"
-          style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
-        />
+        <fieldset style={{ border: "1px solid #e0e0e0", padding: 10, marginBottom: 12 }}>
+          <legend style={{ fontSize: 14 }}>전문영역·관심 (선택)</legend>
+          {expertiseOptions.length === 0 ? (
+            <p style={{ fontSize: 12, color: "#888888", margin: 0 }}>
+              등록된 분류가 없습니다 — <Link href="/admin/classifications">분류 관리</Link>에서 먼저
+              등록하세요.
+            </p>
+          ) : (
+            expertiseOptions.map((option) => (
+              <label key={option.id} style={{ display: "block", fontSize: 14, padding: "4px 0" }}>
+                <input type="checkbox" name="expertiseTags" value={option.label} /> {option.label}
+              </label>
+            ))
+          )}
+        </fieldset>
 
         <label htmlFor="responsibleAccountId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
           책임 담당자 (선택)

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { getActiveSession } from "@/lib/auth/session";
+import { isAllowedControlledValue } from "@/lib/classification-labels";
 
 // FR-03 내 정보 수정. v0.1 P01 필드 중 본인이 스스로 확정할 수 있는 것만 다룬다 —
 // 활동 상태·책임 담당자는 조직이 관리하는 항목이라 여기서 건드리지 않는다.
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
   const formData = await request.formData();
   const nameRaw = formData.get("name");
   const regionRaw = formData.get("region");
-  const expertiseTagsRaw = formData.get("expertiseTags");
+  const expertiseTagValues = formData.getAll("expertiseTags");
   const contactRaw = formData.get("contact");
   const promotionalOptIn = formData.get("promotionalOptIn") === "on";
 
@@ -32,11 +33,30 @@ export async function POST(request: Request) {
   }
   const name = nameRaw.trim();
 
+  // 지역·전문영역/관심은 분류표(Classification) 기반 선택형이다. 화면은 활성
+  // 분류표 값과, 이 항목이 이미 갖고 있던 레거시 값만 선택지로 보여주므로,
+  // 그 두 집합 밖의 값이 오면(직접 API 호출 등) 거부한다.
+  const [regionOptions, expertiseOptions] = await Promise.all([
+    prisma.classification.findMany({ where: { domain: "REGION", active: true }, select: { label: true } }),
+    prisma.classification.findMany({ where: { domain: "EXPERTISE", active: true }, select: { label: true } }),
+  ]);
+  const allowedRegions = new Set(regionOptions.map((o) => o.label));
+  const allowedExpertise = new Set(expertiseOptions.map((o) => o.label));
+  const previousRegion = new Set(subject.region ? [subject.region] : []);
+  const previousExpertiseTags = new Set(subject.expertiseTags);
+
   const region = typeof regionRaw === "string" && regionRaw.trim() ? regionRaw.trim() : null;
-  const expertiseTags =
-    typeof expertiseTagsRaw === "string"
-      ? Array.from(new Set(expertiseTagsRaw.split(",").map((tag) => tag.trim()).filter(Boolean)))
-      : [];
+  if (region && !isAllowedControlledValue(region, allowedRegions, previousRegion)) {
+    return NextResponse.redirect(new URL("/my/profile?error=invalid_region", request.url));
+  }
+
+  const expertiseTags = Array.from(
+    new Set(expertiseTagValues.filter((v): v is string => typeof v === "string" && v.trim() !== "")),
+  );
+  if (expertiseTags.some((tag) => !isAllowedControlledValue(tag, allowedExpertise, previousExpertiseTags))) {
+    return NextResponse.redirect(new URL("/my/profile?error=invalid_expertise_tag", request.url));
+  }
+
   const contact = typeof contactRaw === "string" && contactRaw.trim() ? contactRaw.trim() : null;
 
   // 이름이 바뀌면 검색·이력 보존을 위해 옛 이름을 previousNames에 남긴다(v0.1 P01

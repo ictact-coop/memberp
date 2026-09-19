@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getActiveSession } from "@/lib/auth/session";
 import { hasAnyRole } from "@/lib/auth/roles";
 import { nextDisplayId } from "@/lib/display-id";
+import { isAllowedControlledValue } from "@/lib/classification-labels";
 
 const ADMIN_ROLES = ["SECRETARIAT", "SYSTEM_ADMIN"] as const;
 
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
   const formData = await request.formData();
   const nameRaw = formData.get("name");
   const regionRaw = formData.get("region");
-  const expertiseTagsRaw = formData.get("expertiseTags");
+  const expertiseTagValues = formData.getAll("expertiseTags");
   const responsibleAccountIdRaw = formData.get("responsibleAccountId");
   const visibilityRaw = formData.get("visibility");
 
@@ -42,11 +43,26 @@ export async function POST(request: Request) {
     }
   }
 
+  // 지역·전문영역/관심은 분류표(Classification) 기반 선택형이다 — 새로 만드는
+  // 기구에는 "이미 갖고 있던 레거시 값" 개념이 없으므로 활성 분류표 값만 허용한다.
+  const [regionOptions, expertiseOptions] = await Promise.all([
+    prisma.classification.findMany({ where: { domain: "REGION", active: true }, select: { label: true } }),
+    prisma.classification.findMany({ where: { domain: "EXPERTISE", active: true }, select: { label: true } }),
+  ]);
+  const allowedRegions = new Set(regionOptions.map((o) => o.label));
+  const allowedExpertise = new Set(expertiseOptions.map((o) => o.label));
+
   const region = typeof regionRaw === "string" && regionRaw.trim() ? regionRaw.trim() : null;
-  const expertiseTags =
-    typeof expertiseTagsRaw === "string"
-      ? Array.from(new Set(expertiseTagsRaw.split(",").map((tag) => tag.trim()).filter(Boolean)))
-      : [];
+  if (region && !isAllowedControlledValue(region, allowedRegions, new Set())) {
+    return NextResponse.redirect(new URL("/admin/org-units?error=invalid_region", request.url));
+  }
+  const expertiseTags = Array.from(
+    new Set(expertiseTagValues.filter((v): v is string => typeof v === "string" && v.trim() !== "")),
+  );
+  if (expertiseTags.some((tag) => !isAllowedControlledValue(tag, allowedExpertise, new Set()))) {
+    return NextResponse.redirect(new URL("/admin/org-units?error=invalid_expertise_tag", request.url));
+  }
+
   const visibility: Visibility =
     typeof visibilityRaw === "string" && (Object.values(Visibility) as string[]).includes(visibilityRaw)
       ? (visibilityRaw as Visibility)

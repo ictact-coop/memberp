@@ -5,6 +5,8 @@ import { SUBJECT_STATUS_LABELS } from "@/lib/subject-labels";
 const ERROR_MESSAGES: Record<string, string> = {
   invalid: "이름을 입력해야 합니다.",
   no_subject: "계정에 연결된 사람 정보가 없어 수정할 수 없습니다.",
+  invalid_region: "선택한 지역을 확인할 수 없습니다.",
+  invalid_expertise_tag: "선택한 전문영역·관심 중 확인할 수 없는 값이 있습니다.",
 };
 
 interface ContactInfo {
@@ -32,6 +34,24 @@ export default async function MyProfilePage({
 
   const contactInfo = (subject?.contactInfo as ContactInfo | null) ?? null;
   const contactConsent = (subject?.contactConsent as ContactConsent | null) ?? null;
+
+  const [regionOptions, expertiseOptions] = await Promise.all([
+    prisma.classification.findMany({
+      where: { domain: "REGION", active: true },
+      orderBy: { label: "asc" },
+    }),
+    prisma.classification.findMany({
+      where: { domain: "EXPERTISE", active: true },
+      orderBy: { label: "asc" },
+    }),
+  ]);
+  // 분류표에 아직 없는 기존 값(레거시 자유 텍스트)도 잃지 않도록 선택지에 끼워
+  // "(목록에 없음)"으로 표시한다 — src/lib/classification-labels.ts 참고.
+  const regionLabels = new Set(regionOptions.map((o) => o.label));
+  const legacyRegion =
+    subject?.region && !regionLabels.has(subject.region) ? subject.region : null;
+  const expertiseLabels = new Set(expertiseOptions.map((o) => o.label));
+  const legacyExpertiseTags = (subject?.expertiseTags ?? []).filter((tag) => !expertiseLabels.has(tag));
 
   return (
     <section>
@@ -79,22 +99,51 @@ export default async function MyProfilePage({
             <label htmlFor="region" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
               지역
             </label>
-            <input
+            <select
               id="region"
               name="region"
               defaultValue={subject.region ?? ""}
               style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
-            />
+            >
+              <option value="">선택 안 함</option>
+              {legacyRegion && (
+                <option value={legacyRegion}>{legacyRegion} (목록에 없음)</option>
+              )}
+              {regionOptions.map((option) => (
+                <option key={option.id} value={option.label}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
 
-            <label htmlFor="expertiseTags" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
-              전문영역·관심 (쉼표로 구분)
-            </label>
-            <input
-              id="expertiseTags"
-              name="expertiseTags"
-              defaultValue={subject.expertiseTags.join(", ")}
-              style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
-            />
+            <fieldset style={{ border: "1px solid #e0e0e0", padding: 10, marginBottom: 12 }}>
+              <legend style={{ fontSize: 14 }}>전문영역·관심</legend>
+              {expertiseOptions.length === 0 && legacyExpertiseTags.length === 0 ? (
+                <p style={{ fontSize: 12, color: "var(--color-text-muted)", margin: 0 }}>
+                  등록된 분류가 없습니다.
+                </p>
+              ) : (
+                <>
+                  {expertiseOptions.map((option) => (
+                    <label key={option.id} style={{ display: "block", fontSize: 14, padding: "4px 0" }}>
+                      <input
+                        type="checkbox"
+                        name="expertiseTags"
+                        value={option.label}
+                        defaultChecked={subject.expertiseTags.includes(option.label)}
+                      />{" "}
+                      {option.label}
+                    </label>
+                  ))}
+                  {legacyExpertiseTags.map((tag) => (
+                    <label key={tag} style={{ display: "block", fontSize: 14, padding: "4px 0" }}>
+                      <input type="checkbox" name="expertiseTags" value={tag} defaultChecked /> {tag}{" "}
+                      <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>(목록에 없음)</span>
+                    </label>
+                  ))}
+                </>
+              )}
+            </fieldset>
 
             <label htmlFor="contact" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
               연락처 — 다른 조합원에게 공개되지 않습니다

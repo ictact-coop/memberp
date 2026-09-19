@@ -40,6 +40,7 @@ src/
         roles/page.tsx        역할 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 역할 부여·종료
         org-units/page.tsx    기구 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 기구 등록·목록·보관·복원
         org-units/[id]/edit/page.tsx  기구 정보 수정 — 등록과 같은 필드
+        classifications/page.tsx  분류 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 지역·전문영역 분류 등록·사용 중지
         audit-log/page.tsx    상태 이력 조회(SECRETARIAT/SYSTEM_ADMIN 전용) — AuditLog 조회·필터
       forbidden/page.tsx    로그인은 됐지만 역할·담당 범위가 안 맞을 때
     api/
@@ -93,6 +94,10 @@ src/
           [id]/update/route.ts       POST: 기구 정보 수정(등록과 같은 필드·검증)
           [id]/archive/route.ts      POST: 기구 보관(archivedAt 채움, 삭제 아님)
           [id]/restore/route.ts      POST: 기구 보관 복원(archivedAt을 null로)
+        classifications/
+          create/route.ts            POST: 지역·전문영역 분류 등록(코드 정규화, 중복 거부)
+          [id]/deactivate/route.ts   POST: 분류 사용 중지(active=false, 삭제 아님)
+          [id]/activate/route.ts     POST: 분류 다시 사용(active=true)
   components/
     AppHeader.tsx        브랜드 로고(라임 배지 "IT" + 워드마크) — 모든 화면 상단에 고정
     BottomNav.tsx        모바일 기본 메뉴 (v0.2 §2.1): 홈/참여할 일/기록하기/우리 조합/내 정보
@@ -111,6 +116,8 @@ src/
     role-labels.ts       PermissionRole·ScopeType enum의 한글 라벨
     audit-labels.ts      AuditAction 한글 라벨, beforeData/afterData 변경분만 뽑는 diffAuditData
     assignment-labels.ts AssignmentStatus 한글 라벨, 역할 선택지, 재신청 가능 상태 목록
+    classification-labels.ts 지역·전문영역 분류 도메인·한글 라벨, 코드 정규화,
+                          레거시 자유 텍스트를 잃지 않는 선택형 검증(isAllowedControlledValue)
     auth/
       crypto.ts            토큰 생성·해시, TOTP 비밀키 암호화(AES-256-GCM), 복구코드 생성
       config.ts            토큰 TTL·세션 기간·TOTP 강제 대상 역할·getBaseUrl() 등
@@ -225,15 +232,15 @@ v0.1 P01(주체) 필드 중, 조직이 관리해야 하는 항목(활동 상태�
   볼 수 있는 화면 어디에도 이 값을 노출하지 않는다(지금은 노출할 화면 자체가 없다).
   체크박스를 해제하고 저장해도 `promotionalOptIn: false`로 명시적으로 남는다 —
   "동의한 적 없음"과 "거부함"을 구분하려는 것이다.
-- **전문영역·관심은 쉼표 구분 자유 입력**: 스키마는 `String[]`이라 태그 목록을
-  받을 수 있지만, 분류 체계(`Classification` 모델)를 아직 아무 화면도 안 써서
-  선택형으로 만들 근거가 없다 — 입력을 쉼표로 나누고 trim·중복 제거만 한다.
-  활동의 `role`처럼 이 프로젝트에서 반복되는, "정식 분류가 생기기 전엔 자유
-  텍스트로 시작한다"는 패턴을 따랐다.
+- **지역·전문영역/관심은 분류표(`Classification`) 기반 선택형이다**: 지역은
+  `<select>` 하나, 전문영역·관심은 체크박스 목록으로 바뀌었다 — "분류 관리
+  화면" 절 참고. 필드 자체(`Subject.region: String?`, `expertiseTags: String[]`)는
+  그대로다: 선택한 항목의 `label` 문자열을 저장할 뿐 `Classification`을 외래키로
+  참조하지 않는다 — 분류를 사용 중지해도 이미 저장된 문자열 값 자체는 안 바뀌게
+  하려는 것과, 스키마 마이그레이션 없이 이번 기능을 넣으려는 것 둘 다를 노린
+  선택이다.
 - **수정 이력도 감사기록을 남긴다**: 활동 상태 전이·수정과 같은 `AuditLog`(action
   `UPDATE`)에 이름·지역·연락처·전문영역·수신동의의 변경 전·후 값을 남긴다.
-- **정직하게 남겨둔 것**: 지역·전문영역은 자유 텍스트/쉼표 목록일 뿐 정식
-  분류표에 연결돼 있지 않다 — 분류 관리 화면이 생기면 선택형으로 바꿀 대상이다.
 
 ## 활동 등록 화면 (FR-04 구현)
 
@@ -637,9 +644,10 @@ SECRETARIAT·SYSTEM_ADMIN이 화면에서 이메일과(선택적으로) 역할�
 SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있고, `/api/admin/org-units/create`도
 화면과 별개로 같은 역할을 다시 확인한다.
 
-- **필드는 최소로**: 이름(필수), 지역·전문영역/관심(쉼표 목록)·책임 담당자·공개
-  범위는 모두 선택이다. 사람 주체(내 정보 화면)와 달리 연락처·수신 동의 필드는
-  넣지 않았다 — 기구 자신이 로그인해서 동의를 표시할 일이 없기 때문이다.
+- **필드는 최소로**: 이름(필수), 지역·전문영역/관심(분류표 기반 선택형 — "분류
+  관리 화면" 절 참고)·책임 담당자·공개범위는 모두 선택이다. 사람 주체(내 정보
+  화면)와 달리 연락처·수신 동의 필드는 넣지 않았다 — 기구 자신이 로그인해서
+  동의를 표시할 일이 없기 때문이다.
 - **표시번호는 사람과 같은 채번을 쓴다**: `SUB-0001`처럼 접두사 `SUB`를 그대로
   쓴다 — `Subject`는 유형과 무관하게 하나의 채번 계열이라고 이미 정해져 있었다
   (초대 수락 시 자동 생성되는 사람 주체와 같은 방식, `src/lib/display-id.ts`).
@@ -668,6 +676,39 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있고, `/api/admin/org-units/create`
 `null`로, `AuditLog` action `UPDATE`) — 보관이 되돌릴 수 있는 결정이라는 것을
 실제로 보장한다.
 - **정직하게 남겨둔 것**: 동명이인·중복 기구를 정리(병합)하는 화면은 없다.
+
+### 분류 관리 화면 (`/admin/classifications`)
+
+`Classification`(domain·code·label·active 조회표)은 R1 스키마 설계 때부터 있었지만
+아무 화면도 쓰지 않았다. 지역·전문영역/관심 두 필드를 자유 텍스트에서 선택형으로
+옮기면서 이번에 처음 실제로 채운다. SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있고,
+`/api/admin/classifications/*`도 화면과 별개로 같은 역할을 다시 확인한다.
+
+- **도메인은 지금 두 가지로 고정했다**: `REGION`(지역)·`EXPERTISE`(전문영역·관심).
+  `domain`은 스키마에서 자유 문자열이라 나중에 활동 서비스 분류 같은 다른 도메인이
+  필요해지면 `src/lib/classification-labels.ts`의 `CLASSIFICATION_DOMAINS` 배열에
+  추가하면 된다 — 화면 선택지도 그 배열을 그대로 읽으므로 같이 늘어난다.
+- **코드는 서버가 정규화한다**: 사람이 입력한 코드(예: " seoul ")를 대문자·공백을
+  밑줄로 바꿔 저장한다(`SEOUL`) — "seoul"과 "SEOUL"이 표기 차이만으로 별개
+  레코드가 되는 것을 막는다. 정규화한 뒤에도 같은 (domain, code)가 있으면
+  DB 유일 제약(P2002)을 잡아 `error=duplicate`로 거부한다.
+- **삭제 대신 사용 중지**: `active` 플래그를 끄고 켤 뿐 레코드를 지우지 않는다 —
+  지우면 그 분류를 이미 고른 사람·기구가 "무엇을 골랐었는지" 알 수 없게 되기
+  때문이다. 사용 중지하면 그 즉시 다른 화면(내 정보, 기구 등록·수정)의 선택지에서
+  빠지고, 다시 사용으로 켜면 즉시 돌아온다.
+- **저장 방식은 참조가 아니라 문자열 복사**: 지역·전문영역 필드(`Subject.region`,
+  `expertiseTags`)는 `Classification`을 외래키로 가리키지 않고, 고른 항목의
+  `label` 문자열을 그대로 저장한다. 이 화면에서 라벨 자체를 고치는 기능은 없지만,
+  만약 생기더라도 이미 저장된 값에는 소급 적용되지 않는다는 뜻이다 — 스키마
+  마이그레이션 없이 넣을 수 있는 가장 단순한 형태를 택한 것이다.
+- **레거시 자유 텍스트를 잃지 않는다**: 이 기능 이전에 자유 텍스트로 저장된
+  지역·전문영역 값(또는 나중에 분류를 사용 중지한 뒤에도 남아 있는 값)은 활성
+  분류표에 없어도 그 항목의 수정 화면에서 "(목록에 없음)"이라고 표시된 채 계속
+  선택지로 나타난다(`src/lib/classification-labels.ts`의
+  `isAllowedControlledValue` — "활성 분류표에 있거나, 이 항목이 원래 갖고 있던
+  값이면 허용"). 수정 화면 자체가 없는 새 등록(기구 등록)에는 이 예외가 없다 —
+  처음부터 활성 분류표 값만 허용한다. 화면과 API 양쪽에서 같은 규칙을 다시
+  검증한다(직접 API를 호출해 목록에 없는 값을 새로 끼워 넣는 것을 막기 위해서).
 
 ## 상태 이력 조회 화면 (`/admin/audit-log`)
 
@@ -775,9 +816,10 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있다(`/admin`의 다른 화면과 �
   (`/needs/[needId]/edit`). 다만 종결 후 "새 요청은 원본을 참조하는 새 필요로
   만든다"(v0.1)는 요구는 원본 참조 필드가 스키마에 없어 여전히 구현하지 않았다 —
   지금은 완전히 새로운 상담으로 접수해야 한다.
-- **지역·전문영역 분류 체계**: `Classification` 모델은 스키마에 있지만 아직 아무
-  화면도 쓰지 않는다 — 내 정보 화면의 지역·전문영역/관심은 정식 분류표 없이 자유
-  텍스트(쉼표 목록)로 받는다. 분류 관리 화면이 생기면 선택형으로 바꿀 대상이다.
+- **분류 도메인 확장·병합**: 지역·전문영역 두 도메인만 있다 — 활동 서비스 분류
+  같은 다른 도메인(`ActivityClassification`이 이미 참조를 예정해둔)은 아직 화면이
+  없다. 분류 라벨을 고치거나 두 분류를 하나로 합치는 기능도 없다(사용 중지만
+  가능).
 - **첨부파일의 실제 객체 스토리지 이전**: ADR-0004가 명시한 대로, 지금은 로컬
   디스크 임시 저장이다 — 조합이 S3/MinIO 등을 정하면 `attachment-storage.ts`만
   바꿔 이전해야 한다(활동·상담·수요·기여 네 entityType 모두 이 파일 하나를 통해
@@ -1025,3 +1067,20 @@ npm run dev                  # http://localhost:3000
     기존 기여 증빙 흐름(업로드 시 SELF_REPORTED→DOCUMENTED 자동 승격, 마지막 첨부
     삭제 시 되돌림, 바이트 단위 동일성)이 그대로 동작함을 다시 확인해 회귀가
     없음을 검증
+  - 분류 관리 화면(`/admin/classifications`)과 지역·전문영역 선택형 전환(`/my/
+    profile`, `/admin/org-units` 등록·수정): 역할 없는 계정은 분류 관리 화면
+    접근이 `/forbidden`으로 차단; 코드·라벨 누락은 `error=invalid`, 존재하지
+    않는 도메인은 `error=invalid_domain`으로 거부; 대소문자·공백만 다른 코드
+    (" Seoul "과 "seoul")를 연달아 등록하면 정규화(`SEOUL`) 후 유일 제약에
+    걸려 `error=duplicate`로 거부됨을 확인; 등록한 분류가 내 정보·기구 등록
+    화면의 선택지에 즉시 나타남을 확인; 분류를 사용 중지하면 그 즉시 두 화면의
+    선택지에서 빠지고, 다시 사용으로 켜면 즉시 돌아옴을 확인(레코드 자체는
+    지워지지 않음); 기구 등록 시 분류표에 없는 지역·전문영역 값은
+    `error=invalid_region`/`error=invalid_expertise_tag`로 거부됨을 확인(등록은
+    레거시 예외가 없다); 이미 레거시 자유 텍스트 값을 가진 기구를 수정 화면에서
+    열면 그 값이 "(목록에 없음)"으로 표시된 채 선택지에 남아 있고, 그 값을
+    그대로 다시 제출하면 성공하며, 완전히 새로운(분류표에도 레거시 값에도 없는)
+    값을 제출하면 거부되고, 체크박스에서 레거시 태그를 빼고 저장하면 실제로
+    빠짐을 확인; `/my/profile`에서도 같은 세 가지(레거시 유지·새 값 거부·정상
+    선택 저장)를 동일하게 확인했고, 저장 성공 시 `AuditLog`(entityType
+    `"Subject"`, action `UPDATE`)에 전·후 값이 정확히 남는 것을 확인

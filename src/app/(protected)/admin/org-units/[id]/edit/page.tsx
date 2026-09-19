@@ -6,6 +6,8 @@ import { VISIBILITY_LABELS } from "@/lib/activity-labels";
 const ERROR_MESSAGES: Record<string, string> = {
   invalid: "기구 이름을 입력하세요.",
   invalid_responsible: "선택한 책임 담당자 계정을 확인할 수 없습니다.",
+  invalid_region: "선택한 지역을 확인할 수 없습니다.",
+  invalid_expertise_tag: "선택한 전문영역·관심 중 확인할 수 없는 값이 있습니다.",
 };
 
 // 기구 정보 수정 — 등록 화면(/admin/org-units)과 같은 필드를 그대로 다시
@@ -28,11 +30,22 @@ export default async function EditOrgUnitPage({
     notFound();
   }
 
-  const accounts = await prisma.account.findMany({
-    where: { status: "ACTIVE" },
-    orderBy: { email: "asc" },
-    select: { id: true, email: true, phone: true },
-  });
+  const [accounts, regionOptions, expertiseOptions] = await Promise.all([
+    prisma.account.findMany({
+      where: { status: "ACTIVE" },
+      orderBy: { email: "asc" },
+      select: { id: true, email: true, phone: true },
+    }),
+    prisma.classification.findMany({ where: { domain: "REGION", active: true }, orderBy: { label: "asc" } }),
+    prisma.classification.findMany({
+      where: { domain: "EXPERTISE", active: true },
+      orderBy: { label: "asc" },
+    }),
+  ]);
+  const regionLabels = new Set(regionOptions.map((o) => o.label));
+  const legacyRegion = orgUnit.region && !regionLabels.has(orgUnit.region) ? orgUnit.region : null;
+  const expertiseLabels = new Set(expertiseOptions.map((o) => o.label));
+  const legacyExpertiseTags = orgUnit.expertiseTags.filter((tag) => !expertiseLabels.has(tag));
 
   return (
     <section>
@@ -55,22 +68,47 @@ export default async function EditOrgUnitPage({
         <label htmlFor="region" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
           지역 (선택)
         </label>
-        <input
+        <select
           id="region"
           name="region"
           defaultValue={orgUnit.region ?? ""}
           style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
-        />
+        >
+          <option value="">선택 안 함</option>
+          {legacyRegion && <option value={legacyRegion}>{legacyRegion} (목록에 없음)</option>}
+          {regionOptions.map((option) => (
+            <option key={option.id} value={option.label}>
+              {option.label}
+            </option>
+          ))}
+        </select>
 
-        <label htmlFor="expertiseTags" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
-          전문영역·관심 (선택, 쉼표로 구분)
-        </label>
-        <input
-          id="expertiseTags"
-          name="expertiseTags"
-          defaultValue={orgUnit.expertiseTags.join(", ")}
-          style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
-        />
+        <fieldset style={{ border: "1px solid #e0e0e0", padding: 10, marginBottom: 12 }}>
+          <legend style={{ fontSize: 14 }}>전문영역·관심 (선택)</legend>
+          {expertiseOptions.length === 0 && legacyExpertiseTags.length === 0 ? (
+            <p style={{ fontSize: 12, color: "#888888", margin: 0 }}>등록된 분류가 없습니다.</p>
+          ) : (
+            <>
+              {expertiseOptions.map((option) => (
+                <label key={option.id} style={{ display: "block", fontSize: 14, padding: "4px 0" }}>
+                  <input
+                    type="checkbox"
+                    name="expertiseTags"
+                    value={option.label}
+                    defaultChecked={orgUnit.expertiseTags.includes(option.label)}
+                  />{" "}
+                  {option.label}
+                </label>
+              ))}
+              {legacyExpertiseTags.map((tag) => (
+                <label key={tag} style={{ display: "block", fontSize: 14, padding: "4px 0" }}>
+                  <input type="checkbox" name="expertiseTags" value={tag} defaultChecked /> {tag}{" "}
+                  <span style={{ fontSize: 12, color: "#888888" }}>(목록에 없음)</span>
+                </label>
+              ))}
+            </>
+          )}
+        </fieldset>
 
         <label htmlFor="responsibleAccountId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
           책임 담당자 (선택)

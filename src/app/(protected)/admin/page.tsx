@@ -6,6 +6,7 @@ const TOOLS = [
   { href: "/admin/invitations", label: "초대 관리", description: "이메일로 초대 발급·재발송·취소" },
   { href: "/admin/roles", label: "역할 관리", description: "역할 부여·종료" },
   { href: "/admin/org-units", label: "기구 관리", description: "기구(Subject) 등록·목록" },
+  { href: "/admin/classifications", label: "분류 관리", description: "지역·전문영역 분류표 등록·사용 중지" },
   { href: "/admin/audit-log", label: "상태 이력 조회", description: "활동·상담 상태 변경 기록" },
 ] as const;
 
