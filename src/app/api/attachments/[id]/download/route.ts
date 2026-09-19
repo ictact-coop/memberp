@@ -4,8 +4,8 @@ import { getActiveSession } from "@/lib/auth/session";
 import { readAttachmentFile } from "@/lib/attachment-storage";
 
 // 첨부파일 다운로드 — public/ 대신 이 인증 라우트로만 제공한다(ADR-0004). 업로더
-// 본인이거나, 그 기여가 딸린 활동 책임자·상담 담당자(=/review에서 확인할 수 있는
-// 사람)만 내려받을 수 있다.
+// 본인이거나, 그 대상을 담당하는 사람(기여가 딸린 활동 책임자·상담 담당자, 또는
+// 활동 자체의 책임자·상담 자체의 담당자)만 내려받을 수 있다.
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const active = await getActiveSession();
   if (!active) {
@@ -24,9 +24,18 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   }
 
   const isUploader = attachment.uploadedByAccountId === active.account.id;
-  const isReviewer =
-    attachment.contribution?.activity?.managerAccountId === active.account.id ||
-    attachment.contribution?.need?.assigneeAccountId === active.account.id;
+  let isReviewer = false;
+  if (attachment.entityType === "CONTRIBUTION") {
+    isReviewer =
+      attachment.contribution?.activity?.managerAccountId === active.account.id ||
+      attachment.contribution?.need?.assigneeAccountId === active.account.id;
+  } else if (attachment.entityType === "ACTIVITY") {
+    const activity = await prisma.activity.findUnique({ where: { id: attachment.entityId } });
+    isReviewer = activity?.managerAccountId === active.account.id;
+  } else {
+    const need = await prisma.need.findUnique({ where: { id: attachment.entityId } });
+    isReviewer = need?.assigneeAccountId === active.account.id;
+  }
   if (!isUploader && !isReviewer) {
     return NextResponse.redirect(new URL("/forbidden", request.url));
   }

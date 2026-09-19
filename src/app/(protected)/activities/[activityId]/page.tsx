@@ -13,6 +13,7 @@ import {
   ACTIVITY_TRANSITION_REASON_LABELS,
   availableActivityTransitions,
 } from "@/lib/activity-status";
+import { ATTACHMENT_MAX_SIZE_BYTES } from "@/lib/attachment-storage";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +25,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   reason_required: "사유를 입력해야 합니다.",
   missing_planned_dates: "승인 요청 전에 시작·종료 예정일을 먼저 채워야 합니다.",
   locked: "종료·취소된 활동은 수정할 수 없습니다. 수정은 정정 이력으로 남겨야 합니다.",
+  attachment_required: "첨부할 파일을 선택하세요.",
+  attachment_too_large: `첨부파일은 ${Math.floor(ATTACHMENT_MAX_SIZE_BYTES / 1024 / 1024)}MB 이하만 가능합니다.`,
+  attachment_type: "이미지(JPEG/PNG/WEBP/GIF) 또는 PDF만 첨부할 수 있습니다.",
 };
 
 // 활동 상세 — FR-04, FR-05(참여 신청·배치)
@@ -68,6 +72,16 @@ export default async function ActivityDetailPage({
   const rosterForManager = activity.assignments.filter(
     (assignment) => assignment.status === "ACCEPTED" || assignment.status === "IN_PROGRESS",
   );
+
+  // 첨부는 책임자만 다룬다(다운로드 권한과 같은 원칙) — 목록 자체를 다른 사람에게는
+  // 보여주지 않는다.
+  const attachments = isManager
+    ? await prisma.attachment.findMany({
+        where: { entityType: "ACTIVITY", entityId: activity.id, deletedAt: null },
+        orderBy: { uploadedAt: "desc" },
+      })
+    : [];
+  const canEditAttachments = activity.status !== "CLOSED" && activity.status !== "CANCELLED";
 
   return (
     <section>
@@ -140,6 +154,57 @@ export default async function ActivityDetailPage({
               </li>
             ))}
           </ul>
+        </>
+      )}
+
+      {isManager && (
+        <>
+          <h2 style={{ fontSize: 16, marginTop: 24 }}>첨부파일</h2>
+          <div className="card">
+            {attachments.length === 0 ? (
+              <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginBottom: 0 }}>
+                아직 첨부한 파일이 없습니다.
+              </p>
+            ) : (
+              <ul style={{ listStyle: "none", padding: 0 }}>
+                {attachments.map((attachment) => (
+                  <li key={attachment.id} style={{ fontSize: 14, marginBottom: 6 }}>
+                    <a href={`/api/attachments/${attachment.id}/download`} style={{ fontWeight: 600 }}>
+                      {attachment.fileName}
+                    </a>{" "}
+                    {canEditAttachments && (
+                      <form
+                        method="POST"
+                        action={`/api/attachments/${attachment.id}/delete`}
+                        style={{ display: "inline" }}
+                      >
+                        <button type="submit" className="btn-outline" style={{ fontSize: 12, padding: "2px 8px" }}>
+                          삭제
+                        </button>
+                      </form>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {canEditAttachments && (
+              <form
+                method="POST"
+                action={`/api/activities/${activity.id}/attachments`}
+                encType="multipart/form-data"
+                style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}
+              >
+                <input
+                  type="file"
+                  name="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,application/pdf"
+                />
+                <button type="submit" style={{ padding: "6px 12px", fontSize: 14 }}>
+                  첨부
+                </button>
+              </form>
+            )}
+          </div>
         </>
       )}
 

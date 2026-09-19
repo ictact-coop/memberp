@@ -59,13 +59,14 @@ src/
         [id]/request-revision/route.ts  POST: 보완 요청
         [id]/attachments/route.ts   POST: 증빙 첨부(DRAFT/NEEDS_REVISION일 때만)
       attachments/
-        [id]/download/route.ts      GET: 첨부파일 다운로드(업로더·담당자만)
-        [id]/delete/route.ts        POST: 첨부파일 소프트 삭제(업로더 본인만)
+        [id]/download/route.ts      GET: 첨부파일 다운로드(업로더·담당자만, entityType 무관 공용)
+        [id]/delete/route.ts        POST: 첨부파일 소프트 삭제(업로더 본인만, entityType 무관 공용)
       activities/
         create/route.ts             POST: 활동 등록(항상 PLANNING 상태로 시작)
         [activityId]/
           transition/route.ts       POST: 활동 상태 전이(승인·반려·보류·재개·종료·취소)
           update/route.ts           POST: 활동 정보 수정(등록과 같은 필드·검증)
+          attachments/route.ts      POST: 활동 첨부(책임자만, 종료·취소 시 잠김)
       activity-assignments/
         apply/route.ts              POST: 참여 신청(PROPOSED 생성, 중복 신청 방지)
         [id]/accept/route.ts        POST: 책임자가 수락 → ACCEPTED
@@ -78,6 +79,7 @@ src/
         [needId]/
           transition/route.ts       POST: 상담·수요 상태 전이(확인·제안·사업화·보류·재개·종결)
           update/route.ts           POST: 상담·수요 정보 수정(접수와 같은 필드·검증)
+          attachments/route.ts      POST: 상담·수요 첨부(담당자만, 사업화·종결 시 잠김)
       admin/
         roles/
           grant/route.ts             POST: 역할 부여
@@ -417,13 +419,17 @@ v0.1 §3.2의 활동 상태표를 그대로 코드화했다: 기획→승인대�
   남기려면 반드시 주체가 있어야 하기 때문이다(원본 구상인 "사무국이 나중에 확인 후
   연결"의 단순화 버전).
 
-## 기여 증빙 첨부파일 (ADR-0004, v0.1 A06 구현)
+## 첨부파일 (ADR-0004, v0.1 A06 구현)
 
-기여 증빙은 스키마(`Attachment`)에는 R1 설계 때부터 있었지만, 어디에 저장할지(S3/
+첨부는 스키마(`Attachment`)에는 R1 설계 때부터 있었지만, 어디에 저장할지(S3/
 MinIO 등)가 조합 결정 사항으로 남아 있어(ADR-0001) 업로드 화면 자체가 없었다.
 **ADR-0004**로 "R1은 로컬 디스크에 저장하고, 다운로드는 인증 라우트로만 제공한다"고
 임시 결정해 막힌 것을 풀었다 — 나중에 S3/MinIO로 옮길 때도 `src/lib/
-attachment-storage.ts` 두 함수(저장·읽기)만 바꾸면 되도록 감싸 뒀다.
+attachment-storage.ts` 두 함수(저장·읽기)만 바꾸면 되도록 감싸 뒀다. 기여
+증빙(CONTRIBUTION)이 먼저 생겼고, 활동·상담·수요(ACTIVITY/NEED)는 나중에
+같은 저장소·같은 다운로드·삭제 라우트를 공유하도록 확장했다.
+
+### 기여 증빙 첨부파일
 
 ```
 /my/contributions/new?id=…            [담당자] /review
@@ -461,10 +467,32 @@ attachment-storage.ts` 두 함수(저장·읽기)만 바꾸면 되도록 감싸 
   파일은 디스크에 그대로 둔다 — 실수로 지운 파일을 되살릴 여지를 남기려는
   것이며(수동 복구는 아직 DB 조작으로만 가능), 다운로드 라우트는 `deletedAt`이
   있으면 무조건 거부한다.
+
+### 활동·상담·수요 첨부파일
+
+`Attachment.entityType`에 처음부터 있던 `ACTIVITY`·`NEED`를 실제로 채운다.
+계획서·정산 자료·회의록처럼 기여 증빙과는 성격이 다른 자료를 위한 것이라 화면·
+API는 따로 두되(`/api/activities/[activityId]/attachments`, `/api/needs/[needId]/
+attachments`), 다운로드·삭제(`/api/attachments/[id]/delete`, `.../download`)는
+기여 증빙과 하나의 라우트를 공유한다 — `attachment.entityType`으로 분기해
+누가 담당자인지, 잠겼는지를 그때그때 다시 조회해 확인한다.
+
+- **업로드 권한·잠금은 그 대상의 수정 권한과 같다**: 활동 첨부는 그 활동의
+  `managerAccountId`만, 종료·취소(`CLOSED`/`CANCELLED`)면 잠긴다(활동 수정과
+  똑같은 조건). 상담·수요 첨부는 그 건의 `assigneeAccountId`만, 사업화·종결
+  (`CONVERTED`/`CLOSED`)이면 잠긴다(상담·수요 수정과 똑같은 조건). 별도의 잠금
+  규칙을 새로 만들지 않고 이미 있는 "이 상태에서는 못 고친다" 판단을 그대로
+  재사용한 것이다.
+- **잠긴 뒤에도 기존 첨부는 그대로 보인다**: 잠금은 "추가·삭제"만 막는다.
+  활동을 종료한 뒤에도 종료 전에 올린 첨부는 목록에 그대로 남고 다운로드도
+  똑같이 된다 — 화면에서는 그 상태일 때 "첨부"·"삭제" 버튼 자체가 사라질 뿐이다.
+- **목록은 담당자에게만 보인다**: 다운로드 권한이 업로더·담당자로 제한되는 것과
+  같은 이유로, 첨부 섹션 자체를 활동 책임자·상담 담당자가 아닌 사람에게는
+  아예 보여주지 않는다 — 눌러도 막히는 링크를 보여주는 것보다 화면에서부터
+  안 보이는 편이 맞다고 판단했다.
 - **정직하게 남겨둔 것**: ADR-0004가 명시하듯 이 저장 방식은 서버를 한 대만
   운영한다고 전제한다(수평 확장 불가), 백업 계획이 없다, 바이러스 검사를 하지
-  않는다. 활동·상담·수요(NEED/ACTIVITY entityType)에 대한 첨부는 스키마에는
-  있지만 화면은 아직 기여(CONTRIBUTION) 하나만 만들었다.
+  않는다.
 
 ## 우리 조합 = 상담·수요 화면 (`/needs`, FR-08 구현)
 
@@ -752,8 +780,8 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있다(`/admin`의 다른 화면과 �
   텍스트(쉼표 목록)로 받는다. 분류 관리 화면이 생기면 선택형으로 바꿀 대상이다.
 - **첨부파일의 실제 객체 스토리지 이전**: ADR-0004가 명시한 대로, 지금은 로컬
   디스크 임시 저장이다 — 조합이 S3/MinIO 등을 정하면 `attachment-storage.ts`만
-  바꿔 이전해야 한다. 활동·상담·수요에 대한 첨부(entityType NEED/ACTIVITY) 화면도
-  아직 없다(기여 증빙만 구현).
+  바꿔 이전해야 한다(활동·상담·수요·기여 네 entityType 모두 이 파일 하나를 통해
+  저장·조회하므로 이전 지점은 한 곳뿐이다).
 - **알림 발송(BullMQ/Redis), 로그인 요청 속도 제한**: 백그라운드 작업 큐가 아직 없다.
 - **Docker Compose 배포 설정**: 로컬 검증은 이 컨테이너에 설치된 PostgreSQL로 직접 진행했다.
 
@@ -982,3 +1010,18 @@ npm run dev                  # http://localhost:3000
     (예: "특정 활동: ACT-0001 · ...")·시작~종료일이 정확히 표시됨을 확인; 아직
     끝나지 않은(현재 유효한) 부여는 이 목록에 나타나지 않고 위 "계정별 현재 역할"
     목록에만 남아 있음을 확인
+  - 활동·상담·수요 첨부파일(`/api/activities/[activityId]/attachments`,
+    `/api/needs/[needId]/attachments`, 공용 `/api/attachments/[id]/{download,delete}`):
+    활동은 책임자가 아닌 계정, 상담·수요는 담당자가 아닌 계정의 업로드 시도가
+    각각 `error=forbidden`으로 차단됨을 확인; 허용되지 않는 형식(.exe)은
+    `error=attachment_type`으로 거부; 정상 업로드 후 담당자의 상세 화면에 파일명·
+    다운로드 링크·삭제 버튼이 나타나고, 담당자가 아닌 계정에게는 "첨부파일" 구획
+    자체가 렌더링되지 않음을 확인; 담당자가 아닌 계정의 다운로드·삭제 시도는
+    `/forbidden`으로 차단, 담당자 본인의 다운로드는 업로드한 파일과 바이트 단위로
+    동일함을 확인; 활동을 실제로 종료(CLOSED)까지, 상담·수요를 종결(CLOSED)까지
+    전이시킨 뒤에는 업로드 시도가 `error=locked`로 막히고 화면에서 첨부·삭제
+    버튼이 사라지지만, 잠기기 전에 올려둔 파일은 목록에 그대로 남아 계속
+    다운로드됨을 확인; 다운로드·삭제 라우트를 세 entityType 공용으로 바꾼 뒤에도
+    기존 기여 증빙 흐름(업로드 시 SELF_REPORTED→DOCUMENTED 자동 승격, 마지막 첨부
+    삭제 시 되돌림, 바이트 단위 동일성)이 그대로 동작함을 다시 확인해 회귀가
+    없음을 검증
