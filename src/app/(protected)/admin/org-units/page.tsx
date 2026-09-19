@@ -154,6 +154,11 @@ export default async function OrgUnitsPage({
       </form>
 
       <h2 style={{ fontSize: 16 }}>등록된 기구</h2>
+      <p style={{ marginTop: -8 }}>
+        <Link href="/admin/org-units/merge" style={{ fontSize: 13, fontWeight: 600 }}>
+          동명이인·중복 기구 병합 →
+        </Link>
+      </p>
       {orgUnits.length === 0 ? (
         <p style={{ color: "#555555" }}>등록된 기구가 없습니다.</p>
       ) : (

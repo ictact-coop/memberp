@@ -40,6 +40,7 @@ src/
         roles/page.tsx        역할 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 역할 부여·종료
         org-units/page.tsx    기구 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 기구 등록·목록·보관·복원
         org-units/[id]/edit/page.tsx  기구 정보 수정 — 등록과 같은 필드
+        org-units/merge/page.tsx  기구 병합 — 선택 → 미리보기(개수 조회) → 확정 2단계
         classifications/page.tsx  분류 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 지역·전문영역 분류 등록·사용 중지
         audit-log/page.tsx    상태 이력 조회(SECRETARIAT/SYSTEM_ADMIN 전용) — AuditLog 조회·필터
       forbidden/page.tsx    로그인은 됐지만 역할·담당 범위가 안 맞을 때
@@ -94,6 +95,7 @@ src/
           [id]/update/route.ts       POST: 기구 정보 수정(등록과 같은 필드·검증)
           [id]/archive/route.ts      POST: 기구 보관(archivedAt 채움, 삭제 아님)
           [id]/restore/route.ts      POST: 기구 보관 복원(archivedAt을 null로)
+          merge/route.ts             POST: 기구 병합(참조 6종 이전 후 source 보관)
         classifications/
           create/route.ts            POST: 지역·전문영역 분류 등록(코드 정규화, 중복 거부)
           [id]/deactivate/route.ts   POST: 분류 사용 중지(active=false, 삭제 아님)
@@ -675,7 +677,8 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있고, `/api/admin/org-units/create`
 "보관된 기구" 섹션에서 "복원" 버튼으로 언제든 되돌릴 수 있다(`archivedAt`을 다시
 `null`로, `AuditLog` action `UPDATE`) — 보관이 되돌릴 수 있는 결정이라는 것을
 실제로 보장한다.
-- **정직하게 남겨둔 것**: 동명이인·중복 기구를 정리(병합)하는 화면은 없다.
+동명이인·중복 기구를 하나로 합치는 병합 화면은 별도 절("기구 병합 화면")로
+아래에 다룬다.
 
 ### 분류 관리 화면 (`/admin/classifications`)
 
@@ -709,6 +712,42 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있고, `/api/admin/org-units/create`
   값이면 허용"). 수정 화면 자체가 없는 새 등록(기구 등록)에는 이 예외가 없다 —
   처음부터 활성 분류표 값만 허용한다. 화면과 API 양쪽에서 같은 규칙을 다시
   검증한다(직접 API를 호출해 목록에 없는 값을 새로 끼워 넣는 것을 막기 위해서).
+
+### 기구 병합 화면 (`/admin/org-units/merge`)
+
+동명이인·중복 등록된 기구를 하나로 합친다 — "아직 없는 것"에 남아 있던 마지막
+틈이었다. 지우는 화면이 아니라 **옮기는** 화면이다: 없앨 기구(source)를 가리키던
+모든 참조를 남길 기구(target)로 옮긴 뒤, source는 기구 보관과 똑같이
+`archivedAt`만 채운다 — 실제로 지우지 않는다.
+
+- **옮기는 참조 여섯 가지**: `Need.raisedBySubjectId`·`beneficiarySubjectId`(제기한/
+  대상 상담·수요), `Activity.organizerSubjectId`(주최한 활동), `ActivityAssignment.
+  subjectId`(참여 배정), `Contribution.contributorSubjectId`(기여),
+  `PermissionGrant`(scopeType `ORG_UNIT`인 경우의 scopeId, 역할 범위) — 여기에
+  source에 로그인 계정이 연결돼 있으면(`Account.subjectId`, 원래 기구는 로그인할
+  일이 없어 거의 생기지 않는 상태) 그 계정도 target으로 옮긴다. 전부 한
+  트랜잭션 안에서 처리해, 일부만 옮겨진 채 실패하는 중간 상태가 생기지 않는다.
+- **미리보기 없이 바로 실행하지 않는다**: 화면은 두 단계다. 먼저 없앨 기구·남길
+  기구를 고르는 GET 폼, 그다음 "이 여섯 항목이 몇 건씩 옮겨진다"는 개수를
+  실제로 조회해 보여주는 미리보기(같은 화면을 쿼리스트링으로 다시 그린 것)와
+  "병합 확정" 버튼이다. 되돌리기 번거로운 작업이라 실수로 한 번의 클릭만으로
+  끝나지 않게 했다.
+- **기구 자신의 정보는 옮기지 않는다**: 이름·지역·전문영역·책임 담당자 같은
+  target 자신의 필드는 병합으로 바뀌지 않는다 — "참조를 정리한다"와 "정보를
+  합친다"는 서로 다른 결정이라, 정보를 맞추고 싶으면 병합 전후로 기구 정보
+  수정 화면에서 따로 고쳐야 한다.
+- **막는 경우**: 같은 기구를 고르면(`error=same_subject`), 둘 중 하나가 이미
+  보관된 상태면(`error=archived` — 먼저 복원해야 한다), 둘 다에 로그인 계정이
+  연결돼 있으면(`error=account_conflict` — `Account.subjectId`가 유일 제약이라
+  둘 다는 옮길 수 없다) 각각 거부한다. 화면(쿼리스트링 검증)과 API 양쪽에서
+  같은 조건을 다시 확인한다.
+- **병합 후에도 흔적이 남는다**: source를 보관하며 `AuditLog`(entityType
+  `"Subject"`, action `ARCHIVE`)에 `afterData.mergedIntoSubjectId`로 어디로
+  합쳐졌는지 남기고, `reason`에 "기구 병합: SUB-0009 · ...으로 참조를 옮기고
+  보관함"처럼 사람이 읽는 설명도 남긴다 — 별도 스키마 필드(예: `mergedIntoId`)를
+  추가하지 않고 이미 있던 `AuditLog.reason`·JSON 필드로 기록했다.
+- **정직하게 남겨둔 것**: 병합할 후보를 자동으로 찾아 추천하는 기능은 없다 —
+  관리자가 목록에서 직접 골라야 한다.
 
 ## 상태 이력 조회 화면 (`/admin/audit-log`)
 
@@ -1084,3 +1123,17 @@ npm run dev                  # http://localhost:3000
     빠짐을 확인; `/my/profile`에서도 같은 세 가지(레거시 유지·새 값 거부·정상
     선택 저장)를 동일하게 확인했고, 저장 성공 시 `AuditLog`(entityType
     `"Subject"`, action `UPDATE`)에 전·후 값이 정확히 남는 것을 확인
+  - 기구 병합 화면(`/admin/org-units/merge`): 역할 없는 계정은 화면 접근·API
+    호출 모두 차단됨을 확인; 같은 기구를 두 필드에 고르면 `error=same_subject`로
+    거부; 없앨 기구(source)에 상담·수요(제기·대상 각 1건)·주최한 활동·참여
+    배정·기여·권한 범위(역할 부여)까지 여섯 종류 참조를 모두 만들어 둔 뒤
+    미리보기 화면에서 정확히 "1건"씩 표시됨을 확인; "병합 확정" 후 여섯 참조가
+    전부 실제로 남길 기구(target)를 가리키도록 바뀌고 source에는 하나도 남지
+    않음을 직접 조회해 확인; source가 그 직후 `archivedAt`이 채워져 보관 처리되고
+    병합 화면의 선택지에서도 사라짐을 확인; 이미 보관된 기구를 다시 source로
+    지정하면 `error=archived`, 존재하지 않는 ID는 `error=not_found`로 거부;
+    source·target 양쪽 모두에 로그인 계정이 연결된 경우 `error=account_conflict`로
+    거부되고, source에만 계정이 연결된 경우에는 병합 성공과 함께 그 계정의
+    `subjectId`가 target으로 옮겨감을 확인; 병합 후 source의 `AuditLog`(action
+    `ARCHIVE`)에 `afterData.mergedIntoSubjectId`와 `reason`으로 어디로
+    합쳐졌는지 남는 것을 확인
