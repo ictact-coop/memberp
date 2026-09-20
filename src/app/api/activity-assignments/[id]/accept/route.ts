@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveSession } from "@/lib/auth/session";
+import { notify } from "@/lib/notifications";
 
 // 활동 책임자만 자기 활동의 신청을 수락할 수 있다 — /review의 확인 권한과 같은
 // 원칙(소유권 기반)을 쓴다.
@@ -27,14 +28,28 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.redirect(new URL(`/activities/${assignment.activityId}`, request.url));
   }
 
-  await prisma.activityAssignment.update({
-    where: { id: assignment.id },
-    data: {
-      status: "ACCEPTED",
-      decidedByAccountId: active.account.id,
-      decidedAt: new Date(),
-      startDate: new Date(),
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.activityAssignment.update({
+      where: { id: assignment.id },
+      data: {
+        status: "ACCEPTED",
+        decidedByAccountId: active.account.id,
+        decidedAt: new Date(),
+        startDate: new Date(),
+      },
+    });
+
+    // FR-10: 신청한 사람에게 배정 변경을 알린다.
+    const applicantAccount = await tx.account.findUnique({ where: { subjectId: assignment.subjectId } });
+    if (applicantAccount) {
+      await notify(tx, {
+        accountId: applicantAccount.id,
+        type: "ASSIGNMENT_CHANGED",
+        title: `"${assignment.activity.title}" 참여 신청이 수락되었습니다`,
+        relatedEntityType: "Activity",
+        relatedEntityId: assignment.activityId,
+      });
+    }
   });
 
   return NextResponse.redirect(new URL(`/activities/${assignment.activityId}`, request.url));

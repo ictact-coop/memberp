@@ -7,7 +7,8 @@ export const dynamic = "force-dynamic";
 
 // 내 홈 — v1.0 §6 "참여 중인 활동, 기록하기, 보완 요청, 최근 확인 결과"를 모아
 // 보여준다. 역할별로 다른 홈을 보여주는 것은 아직 없다(문서화된 별도 과제) —
-// 누구나 자신의 참여·기여 현황을 똑같은 구성으로 본다.
+// 누구나 자신의 참여·기여 현황을 똑같은 구성으로 본다. 안 읽은 알림(FR-10)이
+// 있으면 맨 위에 배너로 알린다.
 export default async function HomePage() {
   const active = await requireActiveSession();
 
@@ -23,7 +24,8 @@ export default async function HomePage() {
   }
   const subjectId = active.account.subjectId;
 
-  const [activeAssignments, needsRevision, recentConfirmed] = await Promise.all([
+  const [unreadNotificationCount, activeAssignments, needsRevision, recentConfirmed] = await Promise.all([
+    prisma.notification.count({ where: { accountId: active.account.id, status: { not: "READ" } } }),
     prisma.activityAssignment.findMany({
       where: { subjectId, status: { in: ["ACCEPTED", "IN_PROGRESS"] } },
       include: { activity: { select: { id: true, displayId: true, title: true } } },
@@ -48,6 +50,13 @@ export default async function HomePage() {
       <p style={{ color: "var(--color-text-muted)", fontSize: 13, marginTop: 0 }}>
         참여 중인 활동과 기여 현황을 모아 봅니다.
       </p>
+
+      {unreadNotificationCount > 0 && (
+        <p className="notice-banner">
+          새 알림이 {unreadNotificationCount}건 있습니다.{" "}
+          <Link href="/my/notifications">확인하기 →</Link>
+        </p>
+      )}
 
       <p>
         <Link href="/my/contributions/new" className="btn-link">

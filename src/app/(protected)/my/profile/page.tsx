@@ -65,6 +65,11 @@ export default async function MyProfilePage({
           로그아웃
         </button>
       </form>
+      <p style={{ marginBottom: 8 }}>
+        <Link href="/my/notifications" style={{ fontSize: 13, fontWeight: 600 }}>
+          알림 보기 →
+        </Link>
+      </p>
       <p style={{ marginBottom: 24 }}>
         <Link href="/my/audit-log" style={{ fontSize: 13, fontWeight: 600 }}>
           내 담당 이력 보기 →

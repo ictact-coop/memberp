@@ -30,6 +30,7 @@ src/
         contributions/new/page.tsx  기여 작성 = "기록하기" (FR-06) — 새로 작성/이어 작성/정정 + 증빙 첨부(이어 작성 시)
         profile/page.tsx   내 정보 (FR-03) — 로그인 이메일·로그아웃, 연락처·관심 분야 수정
         audit-log/page.tsx 내 담당 이력 — 내가 책임자·담당자인 활동·상담의 AuditLog만
+        notifications/page.tsx 알림 (FR-10) — 목록·읽음 처리
       needs/
         page.tsx              상담·수요 목록 (FR-08) — 로그인한 누구나 조회
         new/page.tsx          상담·수요 접수 (FR-08) — 활동 운영 역할만 접근
@@ -51,6 +52,9 @@ src/
       health/route.ts      헬스체크 (DB 연결 확인)
       profile/
         update/route.ts            POST: 내 정보(Subject) 수정 — 이름·지역·연락처 등
+      notifications/
+        [id]/read/route.ts         POST: 알림 하나 읽음 처리(본인 것만)
+        read-all/route.ts          POST: 안 읽은 알림 모두 읽음 처리
       auth/
         login/route.ts             POST: 매직링크 요청
         verify/route.ts            GET: 매직링크 소비 → 세션 발급
@@ -127,6 +131,8 @@ src/
     assignment-labels.ts AssignmentStatus 한글 라벨, 역할 선택지, 재신청 가능 상태 목록
     classification-labels.ts 지역·전문영역 분류 도메인·한글 라벨, 코드 정규화,
                           레거시 자유 텍스트를 잃지 않는 선택형 검증(isAllowedControlledValue)
+    notification-labels.ts NotificationType 한글 라벨
+    notifications.ts     알림 생성 헬퍼(notify) — FR-10, 큐 없이 트랜잭션 안에서 즉시 생성
     auth/
       crypto.ts            토큰 생성·해시, TOTP 비밀키 암호화(AES-256-GCM), 복구코드 생성
       config.ts            토큰 TTL·세션 기간·TOTP 강제 대상 역할·getBaseUrl() 등
@@ -922,6 +928,51 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있다(`/admin`의 다른 화면과 �
 - **주체가 연결되지 않은 계정을 방어**: 이론적으로 계정에 `Subject`가 없는 상태(초대
   수락 흐름상 항상 자동 생성되므로 실제로는 발생하지 않지만)를 대비해, 그 경우
   "계정에 연결된 사람 정보가 없습니다" 안내만 보여주고 조회를 하지 않는다.
+- **안 읽은 알림 배너**: 안 읽은 `Notification`이 있으면 맨 위에 "새 알림이 N건
+  있습니다"라는 배너를 띄운다(§"알림 화면" 참고).
+
+## 알림 화면 (`/my/notifications`, FR-10 구현)
+
+`Notification` 모델은 R1 스키마 설계 때부터 있었지만("보완요청·확인결과·배정변경을
+앱 안에서 확인") 이번에 처음 실제로 채운다. 이메일 발송(ADR-0003, Resend)과는
+완전히 별개의 통로다 — 이메일은 로그인·초대 두 가지뿐이고, 이 알림은 앱 안에서만
+보인다.
+
+```
+[이벤트를 일으키는 요청들]                         [받는 사람]
+보완 요청(request-revision)     ─┐
+기여 확인(confirm)               ├→ src/lib/notifications.ts의 notify() ─→ Notification 생성
+참여 수락·거절·종료(accept/       │    (이벤트를 처리하는 트랜잭션 안에서 바로)      (status=SENT)
+  reject/end)                   │
+상담·수요 접수·담당자 변경        ─┘
+  (create/update, 배정자가 바뀔 때만)
+```
+
+- **큐를 거치지 않는다**: "백그라운드 작업 큐(BullMQ/Redis)"도 후보였지만, 이메일
+  발송이 지금도 동기로 문제없이 나가고 있어 당장 급한 필요가 아니었고, Redis를
+  새 필수 의존성으로 들이는 것은 더 무거운 결정(ADR 필요)이라 판단해 미뤘다. 대신
+  이 알림은 이벤트를 일으키는 요청의 트랜잭션 안에서 바로 만든다 — `status`는
+  항상 `SENT`로 채운다("PENDING → 발송 시도"라는 중간 단계가 없다는 뜻). `PENDING`·
+  `FAILED`는 나중에 이메일 등 외부 채널로도 보내는 실제 발송 계층이 생기면 쓸
+  자리로 스키마에 남겨둔다.
+- **어디서 만들어지는가**: `src/lib/notifications.ts`의 `notify()` 헬퍼 하나를
+  다섯 라우트가 함께 쓴다 — 기여 보완 요청·확인(`REVISION_REQUESTED`/
+  `CONTRIBUTION_CONFIRMED`, 받는 사람은 `Contribution.contributorSubjectId`의
+  계정), 참여 배정 수락·거절·종료(`ASSIGNMENT_CHANGED`, 받는 사람은
+  `ActivityAssignment.subjectId`의 계정), 상담·수요 접수·담당자 변경
+  (`NEED_ASSIGNED`, 받는 사람은 새 `assigneeAccountId`, 단 그 사람이 자기
+  자신에게 배정한 경우는 알리지 않는다). 대리입력 등으로 받는 사람의 계정을
+  찾을 수 없으면(예: 기여자 주체에 로그인 계정이 없음) 조용히 건너뛴다.
+- **화면은 세 가지**: 목록(`/my/notifications`, 안 읽은 것 굵게+"안 읽음" 표시),
+  낱개 읽음 처리(`POST /api/notifications/[id]/read`, 본인 알림만), 모두 읽음
+  처리(`POST /api/notifications/read-all`). 알림 제목은 `relatedEntityType`에
+  따라 실제 활동·상담·기여 화면으로 가는 링크가 된다(기여는 `/my/contributions/
+  new?id=...`로, 이어 작성 화면과 같은 링크 규칙).
+- **홈 화면·내 정보 화면에서 진입**: 안 읽은 알림이 있으면 홈 화면 맨 위에 배너로
+  뜨고, 내 정보 화면에도 "알림 보기" 링크를 뒀다.
+- **정직하게 남겨둔 것**: 이메일 등 외부 채널로 이중 발송하지 않는다(로그인 링크·
+  초대 메일만 계속 Resend로 나간다). `GENERIC` 타입은 아직 아무 데서도 안 쓴다 —
+  나중에 정형화되지 않은 공지가 필요해지면 쓸 자리로 남겨뒀다.
 
 ## 상담·수요 수정 화면 (`/needs/[needId]/edit`, FR-08 구현)
 
@@ -982,7 +1033,11 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있다(`/admin`의 다른 화면과 �
   디스크 임시 저장이다 — 조합이 S3/MinIO 등을 정하면 `attachment-storage.ts`만
   바꿔 이전해야 한다(활동·상담·수요·기여 네 entityType 모두 이 파일 하나를 통해
   저장·조회하므로 이전 지점은 한 곳뿐이다).
-- **알림 발송(BullMQ/Redis), 로그인 요청 속도 제한**: 백그라운드 작업 큐가 아직 없다.
+- **백그라운드 작업 큐(BullMQ/Redis), 로그인 요청 속도 제한**: 앱 내 알림(FR-10,
+  `/my/notifications`)은 이제 있지만, 이메일 등 외부 채널로 재시도·지연 발송하는
+  실제 작업 큐는 없다 — 지금은 이메일도 요청 안에서 동기로 바로 보낸다
+  (ADR-0003). Redis를 새 필수 의존성으로 들이는 결정이라 실제 필요(재시도 실패가
+  잦아진다거나, 대량 발송이 요청을 느리게 만든다거나)가 확인되기 전에는 미룬다.
 - **Docker Compose 배포 설정**: 로컬 검증은 이 컨테이너에 설치된 PostgreSQL로 직접 진행했다.
 
 ## 로컬 실행
@@ -1305,3 +1360,17 @@ npm run dev                  # http://localhost:3000
     컴포넌트로 공유 리팩터링한 뒤에도 `/admin/audit-log`가 SYSTEM_ADMIN 계정
     에게는 그대로 보이고 역할 없는 계정에게는 여전히 `/forbidden`으로 막히는
     것을 재확인해 회귀가 없음을 검증
+  - 알림(`/my/notifications`): 참여 신청 수락·거절·종료, 기여 보완 요청·확인,
+    상담·수요 접수 시 다른 사람을 담당자로 지정 — 다섯 가지 이벤트를 실제로
+    일으킨 뒤 받는 사람 계정으로 조회하면 각각 정확한 제목·타입(`ASSIGNMENT_
+    CHANGED`·`REVISION_REQUESTED`·`CONTRIBUTION_CONFIRMED`·`NEED_ASSIGNED`)의
+    알림 6건(참여 3건+기여 2건+배정 1건)이 모두 `status=SENT`로 만들어짐을
+    확인; 홈 화면 배너("새 알림이 N건 있습니다")와 알림 목록 화면의 "모두
+    읽음으로 표시 (N)" 버튼에 정확한 안 읽은 개수가 표시됨을 확인; 낱개 읽음
+    처리 시 그 알림만 `status=READ`로 바뀌고 개수가 정확히 줄어듦을 확인;
+    받는 사람이 아닌 다른 계정이 그 알림의 읽음 처리 API를 직접 호출해도
+    조용히 무시되고(`status`가 안 바뀜) 소유권 없는 알림은 건드릴 수 없음을
+    확인; "모두 읽음" 처리 후 홈 화면 배너가 사라짐을 확인; 알림 목록의
+    관련 항목 링크가 활동·상담·기여 각각 실제 상세/이어 작성 화면으로 정확히
+    연결됨을 확인; 담당자를 자기 자신으로 지정한 상담·수요 접수는 알림이
+    생기지 않음을 확인(자기 자신에게 알릴 필요가 없다는 조건)

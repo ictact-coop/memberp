@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveSession } from "@/lib/auth/session";
+import { notify } from "@/lib/notifications";
 
 // FR-07 확인. "담당 범위"는 활동 책임자(Activity.managerAccountId) 또는 수요 담당자
 // (Need.assigneeAccountId)로 판단한다 — 역할(PermissionGrant)이 아니라 실제 소유권으로
@@ -47,6 +48,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       await tx.contribution.update({
         where: { id: contribution.revisionOfId },
         data: { status: "SUPERSEDED", supersededByContributionId: contribution.id },
+      });
+    }
+
+    // FR-10: 기여자에게 확인 결과를 알린다.
+    const contributorAccount = await tx.account.findUnique({
+      where: { subjectId: contribution.contributorSubjectId },
+    });
+    if (contributorAccount) {
+      await notify(tx, {
+        accountId: contributorAccount.id,
+        type: "CONTRIBUTION_CONFIRMED",
+        title: `${contribution.displayId} 확인 완료`,
+        relatedEntityType: "Contribution",
+        relatedEntityId: contribution.id,
       });
     }
   });

@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getActiveSession } from "@/lib/auth/session";
 import { ACTIVITY_OPERATIONS_ROLES, hasAnyRole } from "@/lib/auth/roles";
 import { nextDisplayId } from "@/lib/display-id";
+import { notify } from "@/lib/notifications";
 
 // FR-08 상담·수요 접수. v0.1 §3.1 A02: 담당(수행자)이 있어야 "접수→확인중" 전이의
 // 조건(담당·다음 행동일)을 나중에 채울 수 있으므로 담당자는 등록 시 필수로 받는다.
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
 
   const need = await prisma.$transaction(async (tx) => {
     const displayId = await nextDisplayId(tx, "NEED");
-    return tx.need.create({
+    const created = await tx.need.create({
       data: {
         displayId,
         title: title.trim(),
@@ -89,6 +90,19 @@ export async function POST(request: Request) {
         createdBy: active.account.id,
       },
     });
+
+    // FR-10: 접수자 본인이 아니라 다른 사람을 담당자로 지정했으면 알린다.
+    if (assigneeAccountId !== active.account.id) {
+      await notify(tx, {
+        accountId: assigneeAccountId,
+        type: "NEED_ASSIGNED",
+        title: `${displayId} 상담·수요 담당자로 지정되었습니다`,
+        relatedEntityType: "Need",
+        relatedEntityId: created.id,
+      });
+    }
+
+    return created;
   });
 
   return NextResponse.redirect(new URL(`/needs/${need.id}`, request.url));
