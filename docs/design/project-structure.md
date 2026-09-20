@@ -997,6 +997,55 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있다(`/admin`의 다른 화면과 �
 - **정직하게 남겨둔 것**: 종결 후 "새 요청은 원본을 참조하는 새 필요로 만든다"는
   v0.1의 요구는 여전히 구현하지 않았다 — 원본을 가리키는 필드가 스키마에 없어서다.
 
+## Docker Compose 배포 설정
+
+로컬에 Postgres를 직접 설치하지 않고도, 또는 조합의 서버 한 대에 그대로 올려
+운영을 시작할 수 있도록 `Dockerfile`·`docker-compose.yml`을 추가했다.
+
+- **3단계 Dockerfile**: `deps`(의존성 설치만, 소스 변경과 무관하게 캐시 재사용)
+  → `builder`(Prisma client 생성 + `next build`, devDependencies 포함) →
+  `runner`(Next.js `output: "standalone"` 결과만 담은 최소 런타임 이미지).
+  `next.config.mjs`에 `output: "standalone"`을 이번에 추가했다 — 안 하면
+  `.next/standalone`이 아예 생기지 않아 `runner` 스테이지가 복사할 파일이 없다.
+- **왜 런타임 이미지에 Prisma CLI를 넣지 않았는가**: `runner`는 `next start`가
+  아니라 standalone 출력의 `server.js`만 실행한다. 마이그레이션은 별도
+  `migrate` 서비스가 `builder` 이미지(전체 `node_modules`+`prisma/` 포함)로
+  `npx prisma migrate deploy`를 실행해 처리하고, `app` 서비스는
+  `depends_on: migrate: condition: service_completed_successfully`로 그
+  마이그레이션이 끝난 뒤에만 뜬다 — 이 세션에서 스키마를 바꿀 때마다 써 온
+  "직접 `migrate deploy`를 실행해 적용" 방식(이 문서 "검증 이력" 여러 항목 참고)을
+  컨테이너 시작 절차에 그대로 옮긴 것이다.
+- **db 서비스**: `postgres:16` 공식 이미지, `POSTGRES_USER/PASSWORD/DB`를
+  `.env.example`의 `DATABASE_URL`과 같은 `memberp`/`memberp`/`memberp`로
+  맞췄다. `pg_isready` 헬스체크가 통과해야 `migrate`가 시작된다.
+  데이터는 `db-data` 볼륨에 남아 `docker compose down`(볼륨 삭제 없는 기본
+  동작) 후 다시 올려도 보존된다.
+- **app 서비스**: `DATABASE_URL`·`ATTACHMENT_STORAGE_DIR`은 컨테이너 내부
+  주소(`db` 서비스명, `/app/storage/attachments`)로 `docker-compose.yml`이
+  직접 고정한다 — `.env`의 같은 값(로컬 실행 기준)은 이 두 항목에 한해 무시된다.
+  `APP_BASE_URL`·`RESEND_API_KEY`·`EMAIL_FROM`은 `.env`에서 그대로 가져오고,
+  `TOTP_ENCRYPTION_KEY`는 `${VAR:?메시지}` 문법으로 비어 있으면 컨테이너
+  시작 자체를 막는다(ADR-0002가 요구하는 암호화 키를 빈 값으로 띄우는 실수를
+  막기 위함). 첨부파일은 `attachments` 볼륨에 남는다. `/api/health`(기존
+  구현, DB 연결 확인)를 컨테이너 헬스체크로 그대로 재사용한다.
+- **정직하게 남겨둔 것 — 이 샌드박스에서 확인할 수 없었던 부분**: 이 환경의
+  네트워크 정책이 Docker Hub 이미지 레이어 저장소(`production.cloudfront.
+  docker.com`)로 나가는 연결을 막고 있어(`docker pull node:22-slim` 자체가
+  `403 Forbidden`으로 거부됨), `docker compose up --build`를 이 세션에서
+  끝까지 실행해 컨테이너가 실제로 뜨는 것까지는 확인하지 못했다. 대신 확인한
+  것: (1) `docker compose config`로 이 compose 파일이 문법 오류 없이
+  파싱되고, `.env`의 실제 값(테스트용으로 이미 만들어둔 진짜
+  `TOTP_ENCRYPTION_KEY` 포함)이 정확히 치환되며, `TOTP_ENCRYPTION_KEY`가
+  비어 있었다면 필수값 검증에 걸렸을 것임을 확인; (2) `next.config.mjs`에
+  `output: "standalone"`을 넣은 뒤 `npx next build`를 직접 실행해
+  `.next/standalone/server.js`와 `.next/static`이 실제로 생성되고,
+  `runner` 스테이지가 `COPY`하는 경로들이 정확히 맞음을 확인(참고로
+  standalone `node_modules`는 142MB로, 전체 814MB의 5분의 1 이하로 줄어듦도
+  확인); (3) Docker 데몬을 이 세션에서 직접 띄워 데몬 자체는 정상 기동됨을
+  확인했으나, 이후 이미지 빌드가 위 네트워크 제약으로 막혀 컨테이너 기동·
+  `migrate`→`app` 순서 의존성·헬스체크 동작은 실제 조합 서버나 네트워크
+  제약이 없는 환경에서 최초 실행 시 확인이 필요하다.
+
 ## 화면과 요구사항 번호의 연결
 
 `src/app` 폴더 구조는 v1.0 §6(화면 구성)의 R1 화면과 §5(FR 번호)에 맞춰 배치했다.
@@ -1038,7 +1087,10 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있다(`/admin`의 다른 화면과 �
   실제 작업 큐는 없다 — 지금은 이메일도 요청 안에서 동기로 바로 보낸다
   (ADR-0003). Redis를 새 필수 의존성으로 들이는 결정이라 실제 필요(재시도 실패가
   잦아진다거나, 대량 발송이 요청을 느리게 만든다거나)가 확인되기 전에는 미룬다.
-- **Docker Compose 배포 설정**: 로컬 검증은 이 컨테이너에 설치된 PostgreSQL로 직접 진행했다.
+- **Docker 이미지 레지스트리 배포·CI**: Docker Compose로 로컬/단일 서버 실행은
+  이제 있다("Docker Compose 배포 설정" 참고). 이미지를 레지스트리에 올리고
+  여러 대에 배포하는 절차, GitHub Actions 등에서 빌드를 검증하는 CI는 아직
+  없다.
 
 ## 로컬 실행
 
@@ -1374,3 +1426,13 @@ npm run dev                  # http://localhost:3000
     관련 항목 링크가 활동·상담·기여 각각 실제 상세/이어 작성 화면으로 정확히
     연결됨을 확인; 담당자를 자기 자신으로 지정한 상담·수요 접수는 알림이
     생기지 않음을 확인(자기 자신에게 알릴 필요가 없다는 조건)
+  - Docker Compose 배포 설정: `output: "standalone"` 추가 후 `npx next build`가
+    성공하고 `.next/standalone/server.js`·`.next/static`이 `runner` 스테이지가
+    기대하는 경로 그대로 생성됨을 확인(standalone `node_modules` 142MB, 전체
+    814MB 대비 대폭 축소); `docker compose config`로 `docker-compose.yml`
+    문법과 `.env` 값 치환(테스트용 실제 `TOTP_ENCRYPTION_KEY` 포함)이 정확함을
+    확인; `npx eslint .` 통과 확인. 이 샌드박스의 네트워크 정책이 Docker Hub
+    이미지 레이어 저장소로의 접근을 막고 있어(`docker pull node:22-slim`이
+    `403 Forbidden`) `docker compose up --build`로 컨테이너가 실제로 뜨는 것
+    자체는 이 세션에서 확인하지 못했다 — 위 "Docker Compose 배포 설정" 절의
+    "정직하게 남겨둔 것" 참고
