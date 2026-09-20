@@ -112,7 +112,7 @@ export default async function NewContributionPage({
 
   const [activities, needs, attachments] = await Promise.all([
     prisma.activity.findMany({
-      where: { archivedAt: null },
+      where: { archivedAt: null, supersededByActivityId: null },
       orderBy: { createdAt: "desc" },
       take: 50,
       select: { id: true, title: true },

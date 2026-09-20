@@ -62,7 +62,7 @@ export default async function NeedDetailPage({
   const [activities, subjects] = await Promise.all([
     actions.includes("convert")
       ? prisma.activity.findMany({
-          where: { archivedAt: null },
+          where: { archivedAt: null, supersededByActivityId: null },
           orderBy: { createdAt: "desc" },
           select: { id: true, displayId: true, title: true },
         })

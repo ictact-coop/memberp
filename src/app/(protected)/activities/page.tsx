@@ -13,7 +13,7 @@ export default async function ActivitiesPage() {
   const active = await requireActiveSession();
   const [activities, canCreate] = await Promise.all([
     prisma.activity.findMany({
-      where: { archivedAt: null },
+      where: { archivedAt: null, supersededByActivityId: null },
       orderBy: { createdAt: "desc" },
       take: 20,
     }),

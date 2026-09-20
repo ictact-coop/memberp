@@ -42,7 +42,7 @@ export default async function AdminRolesPage({
       },
     }),
     prisma.activity.findMany({
-      where: { archivedAt: null },
+      where: { archivedAt: null, supersededByActivityId: null },
       orderBy: { createdAt: "desc" },
       select: { id: true, displayId: true, title: true },
     }),

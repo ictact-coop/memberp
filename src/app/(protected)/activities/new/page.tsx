@@ -27,7 +27,7 @@ export default async function NewActivityPage({
       include: { subject: { select: { name: true } } },
     }),
     prisma.activity.findMany({
-      where: { archivedAt: null },
+      where: { archivedAt: null, supersededByActivityId: null },
       orderBy: { createdAt: "desc" },
       select: { id: true, displayId: true, title: true },
     }),

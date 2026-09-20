@@ -17,10 +17,12 @@ function toDateInputValue(date: Date | null): string {
   return date ? date.toISOString().slice(0, 10) : "";
 }
 
-// 활동 수정 — FR-04. 등록 화면과 같은 필드를 고친다. 책임자만 접근할 수 있고
-// (상태 전이와 같은 원칙), 종료·취소된 활동은 "수정은 정정 이력"(v0.1 §3.2)이라
-// 이 화면 대신 정정 이력 화면(/activities/[id]/revise)을 써야 한다.
-export default async function EditActivityPage({
+// 활동 정정 이력 만들기 — v0.1 §3.2 "종료 후 수정은 정정 이력으로". 종료·취소된
+// 활동의 등록 정보를 고치는 유일한 방법이다. 등록·수정 화면과 같은 필드를
+// 원본 값으로 미리 채워 보여주고, 제출하면 원본을 대체하는 새 활동 행이
+// 만들어진다(API가 참조 이전까지 처리한다). 책임자만 접근할 수 있고, 이미
+// 정정된(대체된) 원본에서는 최신 버전으로 안내한다.
+export default async function ReviseActivityPage({
   params,
   searchParams,
 }: {
@@ -31,15 +33,18 @@ export default async function EditActivityPage({
   const { activityId } = await params;
   const { error } = await searchParams;
 
-  const activity = await prisma.activity.findUnique({ where: { id: activityId } });
-  if (!activity) {
+  const original = await prisma.activity.findUnique({ where: { id: activityId } });
+  if (!original) {
     notFound();
   }
-  if (activity.managerAccountId !== active.account.id) {
+  if (original.managerAccountId !== active.account.id) {
     redirect(`/activities/${activityId}?error=forbidden`);
   }
-  if (activity.status === "CLOSED" || activity.status === "CANCELLED") {
-    redirect(`/activities/${activityId}?error=locked`);
+  if (original.status !== "CLOSED" && original.status !== "CANCELLED") {
+    redirect(`/activities/${activityId}?error=not_locked`);
+  }
+  if (original.supersededByActivityId) {
+    redirect(`/activities/${original.supersededByActivityId}?error=already_revised`);
   }
 
   const [accounts, allActivities] = await Promise.all([
@@ -54,18 +59,25 @@ export default async function EditActivityPage({
       select: { id: true, displayId: true, title: true },
     }),
   ]);
-  // 자기 자신과 모든 하위 활동은 상위 활동 후보에서 뺀다 — 순환(A→B→A) 방지.
+  // 새 행은 원본이 트리에서 있던 자리를 물려받는다 — 원본 자신과 원본의 하위
+  // 활동은 상위 활동 후보에서 뺀다(활동 수정 화면과 같은 순환 방지 원칙).
   const excludedParentIds = await getSelfAndDescendantActivityIds(prisma, activityId);
   const parentCandidates = allActivities.filter((candidate) => !excludedParentIds.has(candidate.id));
 
   return (
     <section>
-      <h1 style={{ fontSize: 20 }}>활동 수정</h1>
+      <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{original.displayId}</p>
+      <h1 style={{ fontSize: 20 }}>정정 이력 만들기</h1>
+      <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
+        종료·취소된 활동은 직접 고칠 수 없습니다. 아래 내용으로 저장하면 이 활동을 대체하는
+        새 활동이 만들어지고, 참여 배정·기여 등 이 활동과 연결된 기록은 모두 새 활동으로
+        옮겨집니다. 원본은 지워지지 않고 "정정됨" 표시와 함께 그대로 남습니다.
+      </p>
       {error && ERROR_MESSAGES[error] && (
         <p style={{ color: "var(--color-danger)" }}>{ERROR_MESSAGES[error]}</p>
       )}
 
-      <form method="POST" action={`/api/activities/${activity.id}/update`} className="card">
+      <form method="POST" action={`/api/activities/${original.id}/revise`} className="card">
         <label htmlFor="title" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
           활동명
         </label>
@@ -73,7 +85,7 @@ export default async function EditActivityPage({
           id="title"
           name="title"
           required
-          defaultValue={activity.title}
+          defaultValue={original.title}
           style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
         />
 
@@ -83,7 +95,7 @@ export default async function EditActivityPage({
         <select
           id="managementType"
           name="managementType"
-          defaultValue={activity.managementType}
+          defaultValue={original.managementType}
           style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
         >
           {Object.entries(MANAGEMENT_TYPE_LABELS).map(([value, label]) => (
@@ -101,7 +113,7 @@ export default async function EditActivityPage({
           name="purpose"
           rows={3}
           required
-          defaultValue={activity.purpose}
+          defaultValue={original.purpose}
           style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
         />
 
@@ -113,7 +125,7 @@ export default async function EditActivityPage({
                 type="checkbox"
                 name="missions"
                 value={value}
-                defaultChecked={activity.missions.includes(value as (typeof activity.missions)[number])}
+                defaultChecked={original.missions.includes(value as (typeof original.missions)[number])}
               />{" "}
               {label}
             </label>
@@ -126,7 +138,7 @@ export default async function EditActivityPage({
         <select
           id="parentActivityId"
           name="parentActivityId"
-          defaultValue={activity.parentActivityId ?? ""}
+          defaultValue={original.parentActivityId ?? ""}
           style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
         >
           <option value="">선택 안 함</option>
@@ -146,7 +158,7 @@ export default async function EditActivityPage({
           type="number"
           min="0"
           step="0.01"
-          defaultValue={activity.budgetBaseline?.toString() ?? ""}
+          defaultValue={original.budgetBaseline?.toString() ?? ""}
           style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
         />
 
@@ -157,7 +169,7 @@ export default async function EditActivityPage({
           id="managerAccountId"
           name="managerAccountId"
           required
-          defaultValue={activity.managerAccountId}
+          defaultValue={original.managerAccountId}
           style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
         >
           {accounts.map((account) => (
@@ -166,9 +178,6 @@ export default async function EditActivityPage({
             </option>
           ))}
         </select>
-        <p style={{ fontSize: 12, color: "#888888", marginTop: -8, marginBottom: 12 }}>
-          책임자를 바꾸면 이후 상태 전이·신청 수락은 새 책임자만 할 수 있습니다.
-        </p>
 
         <label htmlFor="visibility" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
           공개 범위
@@ -176,7 +185,7 @@ export default async function EditActivityPage({
         <select
           id="visibility"
           name="visibility"
-          defaultValue={activity.visibility}
+          defaultValue={original.visibility}
           style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
         >
           {Object.entries(VISIBILITY_LABELS).map(([value, label]) => (
@@ -193,7 +202,7 @@ export default async function EditActivityPage({
           id="plannedStartDate"
           name="plannedStartDate"
           type="date"
-          defaultValue={toDateInputValue(activity.plannedStartDate)}
+          defaultValue={toDateInputValue(original.plannedStartDate)}
           style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
         />
 
@@ -204,12 +213,12 @@ export default async function EditActivityPage({
           id="plannedEndDate"
           name="plannedEndDate"
           type="date"
-          defaultValue={toDateInputValue(activity.plannedEndDate)}
+          defaultValue={toDateInputValue(original.plannedEndDate)}
           style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 16 }}
         />
 
         <button type="submit" style={{ padding: "10px 16px", fontSize: 16 }}>
-          저장
+          정정 이력 저장
         </button>
       </form>
     </section>

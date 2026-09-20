@@ -25,6 +25,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   reason_required: "사유를 입력해야 합니다.",
   missing_planned_dates: "승인 요청 전에 시작·종료 예정일을 먼저 채워야 합니다.",
   locked: "종료·취소된 활동은 수정할 수 없습니다. 수정은 정정 이력으로 남겨야 합니다.",
+  not_locked: "진행 중인 활동은 정정 이력이 아니라 활동 정보 수정을 쓰세요.",
+  already_revised: "이미 정정된 활동입니다. 최신 버전을 보여드립니다.",
   attachment_required: "첨부할 파일을 선택하세요.",
   attachment_too_large: `첨부파일은 ${Math.floor(ATTACHMENT_MAX_SIZE_BYTES / 1024 / 1024)}MB 이하만 가능합니다.`,
   attachment_type: "이미지(JPEG/PNG/WEBP/GIF) 또는 PDF만 첨부할 수 있습니다.",
@@ -55,6 +57,8 @@ export default async function ActivityDetailPage({
         orderBy: { createdAt: "desc" },
         select: { id: true, displayId: true, title: true },
       },
+      revisionOf: { select: { id: true, displayId: true, title: true } },
+      revisions: { select: { id: true, displayId: true, title: true } },
     },
   });
 
@@ -81,12 +85,30 @@ export default async function ActivityDetailPage({
         orderBy: { uploadedAt: "desc" },
       })
     : [];
-  const canEditAttachments = activity.status !== "CLOSED" && activity.status !== "CANCELLED";
+  const isLocked = activity.status === "CLOSED" || activity.status === "CANCELLED";
+  const canEditAttachments = !isLocked;
+  const supersededBy = activity.revisions[0];
 
   return (
     <section>
       <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{activity.displayId}</p>
       <h1 style={{ fontSize: 20, marginBottom: 8 }}>{activity.title}</h1>
+
+      {supersededBy && (
+        <p className="notice-banner">
+          이 활동 정보는 정정되었습니다.{" "}
+          <Link href={`/activities/${supersededBy.id}`}>최신 버전({supersededBy.displayId}) 보기 →</Link>
+        </p>
+      )}
+      {activity.revisionOf && (
+        <p className="notice-banner">
+          이 활동은{" "}
+          <Link href={`/activities/${activity.revisionOf.id}`}>
+            {activity.revisionOf.displayId} · {activity.revisionOf.title}
+          </Link>
+          의 정정본입니다.
+        </p>
+      )}
 
       <div className="card">
         <span className={`badge ${ACTIVITY_STATUS_BADGE_TONE[activity.status]}`}>
@@ -133,10 +155,17 @@ export default async function ActivityDetailPage({
             </>
           )}
         </dl>
-        {isManager && activity.status !== "CLOSED" && activity.status !== "CANCELLED" && (
+        {isManager && !isLocked && (
           <p style={{ marginBottom: 0 }}>
             <Link href={`/activities/${activity.id}/edit`} style={{ fontSize: 13, fontWeight: 600 }}>
               활동 정보 수정 →
+            </Link>
+          </p>
+        )}
+        {isManager && isLocked && !supersededBy && (
+          <p style={{ marginBottom: 0 }}>
+            <Link href={`/activities/${activity.id}/revise`} style={{ fontSize: 13, fontWeight: 600 }}>
+              정정 이력 만들기 →
             </Link>
           </p>
         )}
@@ -279,7 +308,11 @@ export default async function ActivityDetailPage({
       )}
 
       <h2 style={{ fontSize: 16, marginTop: 24 }}>내 참여</h2>
-      {!active.account.subjectId ? (
+      {supersededBy ? (
+        <p style={{ color: "var(--color-text-muted)" }}>
+          정정된 활동입니다. 최신 버전에서 참여 현황을 확인하세요.
+        </p>
+      ) : !active.account.subjectId ? (
         <p style={{ color: "var(--color-danger)" }}>계정에 연결된 사람 정보가 없어 신청할 수 없습니다.</p>
       ) : myAssignment && !canApply ? (
         <div className="card">
@@ -322,7 +355,7 @@ export default async function ActivityDetailPage({
         </form>
       )}
 
-      {isManager && (
+      {isManager && !supersededBy && (
         <>
           <h2 style={{ fontSize: 16, marginTop: 24 }}>신청 대기 ({pendingForManager.length})</h2>
           {pendingForManager.length === 0 ? (
@@ -377,11 +410,13 @@ export default async function ActivityDetailPage({
         </>
       )}
 
-      <p style={{ fontSize: 13, marginTop: 24 }}>
-        <a href={`/my/contributions/new?activityId=${activity.id}`} style={{ fontWeight: 600 }}>
-          기여 작성 →
-        </a>
-      </p>
+      {!supersededBy && (
+        <p style={{ fontSize: 13, marginTop: 24 }}>
+          <a href={`/my/contributions/new?activityId=${activity.id}`} style={{ fontWeight: 600 }}>
+            기여 작성 →
+          </a>
+        </p>
+      )}
     </section>
   );
 }
