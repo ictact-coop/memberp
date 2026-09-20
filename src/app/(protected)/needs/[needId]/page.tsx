@@ -98,6 +98,16 @@ export default async function NeedDetailPage({
           </Link>
         </p>
       )}
+      {isAssignee && (
+        <p>
+          <Link
+            href={`/my/audit-log?entityType=Need&entityId=${need.id}`}
+            style={{ fontSize: 13, fontWeight: 600 }}
+          >
+            이 상담·수요 변경 이력 →
+          </Link>
+        </p>
+      )}
 
       <div className="card">
         <span className={`badge ${NEED_STATUS_BADGE_TONE[need.status]}`}>

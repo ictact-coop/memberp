@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireActiveSession } from "@/lib/auth/session";
 import { SUBJECT_STATUS_LABELS } from "@/lib/subject-labels";
@@ -59,11 +60,16 @@ export default async function MyProfilePage({
       <h1 style={{ fontSize: 20, marginTop: 0 }}>내 정보</h1>
       <p style={{ color: "var(--color-text-muted)" }}>로그인 계정: {active.account.email}</p>
 
-      <form method="POST" action="/api/auth/logout" style={{ marginBottom: 24 }}>
+      <form method="POST" action="/api/auth/logout" style={{ marginBottom: 12 }}>
         <button type="submit" className="btn-outline" style={{ padding: "10px 16px", fontSize: 16 }}>
           로그아웃
         </button>
       </form>
+      <p style={{ marginBottom: 24 }}>
+        <Link href="/my/audit-log" style={{ fontSize: 13, fontWeight: 600 }}>
+          내 담당 이력 보기 →
+        </Link>
+      </p>
 
       <h2 style={{ fontSize: 16 }}>연락처·관심 분야</h2>
       {error && ERROR_MESSAGES[error] && (

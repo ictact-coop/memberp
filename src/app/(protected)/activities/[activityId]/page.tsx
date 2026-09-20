@@ -169,6 +169,16 @@ export default async function ActivityDetailPage({
             </Link>
           </p>
         )}
+        {isManager && (
+          <p style={{ marginBottom: 0, marginTop: 6 }}>
+            <Link
+              href={`/my/audit-log?entityType=Activity&entityId=${activity.id}`}
+              style={{ fontSize: 13, fontWeight: 600 }}
+            >
+              이 활동 변경 이력 →
+            </Link>
+          </p>
+        )}
       </div>
 
       {activity.childActivities.length > 0 && (

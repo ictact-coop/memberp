@@ -1,11 +1,6 @@
-import Link from "next/link";
 import { requireRole } from "@/lib/auth/roles";
 import { prisma } from "@/lib/prisma";
-import { AUDIT_ACTION_LABELS, diffAuditData } from "@/lib/audit-labels";
-
-function formatDateTime(date: Date): string {
-  return date.toISOString().slice(0, 16).replace("T", " ");
-}
+import { AuditLogEntries } from "@/components/AuditLogEntries";
 
 // 상태 이력 조회 — 활동·상담 상태 전이, 활동·내 정보 수정이 남긴 AuditLog를
 // 사람이 보는 화면. v1.0 §3 역할표: 감사기록은 시스템 관리자 몫이라
@@ -43,12 +38,6 @@ export default async function AuditLogPage({
   });
   const actorLabelById = new Map(actors.map((a) => [a.id, a.email ?? a.phone ?? a.id]));
 
-  function entityLink(type: string, id: string): string | null {
-    if (type === "Activity") return `/activities/${id}`;
-    if (type === "Need") return `/needs/${id}`;
-    return null;
-  }
-
   return (
     <section>
       <h1 style={{ fontSize: 20 }}>상태 이력 조회</h1>
@@ -76,46 +65,7 @@ export default async function AuditLogPage({
         </button>
       </form>
 
-      {logs.length === 0 ? (
-        <p style={{ color: "#555555" }}>조건에 맞는 이력이 없습니다.</p>
-      ) : (
-        <ul style={{ listStyle: "none", padding: 0 }}>
-          {logs.map((log) => {
-            const diffs = diffAuditData(log.beforeData, log.afterData);
-            const link = entityLink(log.entityType, log.entityId);
-            return (
-              <li key={log.id} style={{ borderBottom: "1px solid #e0e0e0", padding: "12px 0" }}>
-                <div style={{ fontSize: 12, color: "#888888" }}>
-                  {formatDateTime(log.occurredAt)} ·{" "}
-                  {log.actorAccountId ? actorLabelById.get(log.actorAccountId) ?? log.actorAccountId : "시스템"}
-                </div>
-                <div>
-                  <strong>{AUDIT_ACTION_LABELS[log.action]}</strong> · {log.entityType}{" "}
-                  {link ? (
-                    <Link href={link} style={{ fontSize: 12 }}>
-                      {log.entityId.slice(0, 8)}…
-                    </Link>
-                  ) : (
-                    <span style={{ fontSize: 12, color: "#888888" }}>{log.entityId.slice(0, 8)}…</span>
-                  )}
-                </div>
-                {diffs.length > 0 && (
-                  <ul style={{ fontSize: 12, color: "#555555", marginTop: 4, paddingLeft: 16 }}>
-                    {diffs.map((diff) => (
-                      <li key={diff.key}>
-                        {diff.key}: {diff.before} → {diff.after}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {log.reason && (
-                  <div style={{ fontSize: 12, color: "#555555", marginTop: 4 }}>사유: {log.reason}</div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      <AuditLogEntries logs={logs} actorLabelById={actorLabelById} />
     </section>
   );
 }
