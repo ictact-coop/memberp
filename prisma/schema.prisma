@@ -409,6 +409,19 @@ model TotpRecoveryCode {
   @@map("totp_recovery_codes")
 }
 
+// 로그인 요청 속도 제한 — 시도 하나당 행 하나를 남기고, 창(window) 밖으로 나간
+// 오래된 행은 다음 확인 때 같은 (scope, key)에 대해 지워 표는 계속 작지만 유지된다.
+// Redis 등 별도 인프라 없이 이미 있는 Postgres만으로 처리한다(ADR-0001).
+model RateLimitAttempt {
+  id        String   @id @default(uuid())
+  scope     String // "login_request" | "totp_verify"
+  key       String // scope별 제한 단위: 이메일, 계정 ID 등
+  createdAt DateTime @default(now())
+
+  @@index([scope, key, createdAt])
+  @@map("rate_limit_attempts")
+}
+
 // v0.1 §4.10 "권한 부여 DB": 역할·담당 범위·기간·승인자
 model PermissionGrant {
   id                 String         @id @default(uuid())
