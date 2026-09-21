@@ -1,0 +1,66 @@
+# 로컬 실습·소규모 배포용 Docker Compose 구성.
+# 실행 전: cp .env.example .env 후 TOTP_ENCRYPTION_KEY(openssl rand -base64 32)와
+# 필요 시 RESEND_API_KEY / EMAIL_FROM / APP_BASE_URL을 채운다.
+#
+#   docker compose up -d --build
+#   docker compose run --rm migrate npx tsx prisma/bootstrap-admin.ts you@example.org   # 최초 관리자 부트스트랩(선택)
+#
+# DATABASE_URL과 ATTACHMENT_STORAGE_DIR은 컨테이너 내부 경로를 쓰므로
+# .env의 값(로컬 실행용 localhost 기준)과 무관하게 이 파일에서 직접 고정한다.
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: memberp
+      POSTGRES_PASSWORD: memberp
+      POSTGRES_DB: memberp
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U memberp -d memberp"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      target: builder
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://memberp:memberp@db:5432/memberp?schema=public
+    command: ["npx", "prisma", "migrate", "deploy"]
+
+  app:
+    build:
+      context: .
+      target: runner
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://memberp:memberp@db:5432/memberp?schema=public
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:3000}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-공동체IT <login@example.org>}
+      TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?TOTP_ENCRYPTION_KEY를 .env에 설정하세요 (openssl rand -base64 32)}
+      ATTACHMENT_STORAGE_DIR: /app/storage/attachments
+    ports:
+      - "3000:3000"
+    volumes:
+      - attachments:/app/storage/attachments
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  db-data:
+  attachments:

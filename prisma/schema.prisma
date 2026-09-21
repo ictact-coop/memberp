@@ -1,0 +1,788 @@
+// R1(참여 시범) 범위 스키마 — FR-01~FR-12
+// 근거: docs/planning/04-신규시스템통합-개발기획서-v1.0.docx, docs/planning/02-상세설계-v0.1.md
+// 설계 메모: docs/design/r1-schema.md
+//
+// R2 이후로 미룬 것(관계 이력, 결과물·지식, 의사결정, 교육 출석, 계약·청구, 자원관리,
+// 지표·성과, 아카이브)은 이 스키마에 없다. 근거 문서가 해당 기능을 R2~R4로 명시했기 때문이며,
+// docs/design/r1-schema.md의 "R1 이후로 미룬 것"에 사유를 정리했다.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 열거형
+// ─────────────────────────────────────────────────────────────
+
+enum SubjectType {
+  PERSON
+  ORGANIZATION
+  TEAM
+  ORG_UNIT
+}
+
+enum SubjectStatus {
+  ACTIVE
+  DORMANT
+  CLOSED
+  NEEDS_CONFIRMATION
+}
+
+enum AccountStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  WITHDRAWN
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+  REVOKED
+}
+
+// ADR-0002: 토큰을 발급 목적별로 구분해, 로그인용 토큰이 다른 용도로 재사용되지 않게 한다.
+enum LoginTokenPurpose {
+  LOGIN
+}
+
+// v1.0 §3 역할표
+enum PermissionRole {
+  MEMBER
+  ACTIVITY_MANAGER
+  DOMAIN_OPERATOR
+  SECRETARIAT
+  FINANCE
+  BOARD
+  SYSTEM_ADMIN
+  EXTERNAL_PARTICIPANT
+}
+
+enum ScopeType {
+  GLOBAL
+  ACTIVITY
+  ORG_UNIT
+}
+
+// 공통 필드 visibility: 공개검토대기/조합원/담당팀/제한
+enum Visibility {
+  PENDING_REVIEW
+  MEMBER
+  TEAM
+  RESTRICTED
+}
+
+enum NeedChannel {
+  PHONE
+  EMAIL
+  REFERRAL
+  EVENT
+  SELF_DISCOVERED
+  PUBLIC_CALL
+}
+
+// v0.1 §3.1 상태전이
+enum NeedStatus {
+  RECEIVED
+  REVIEWING
+  PROPOSING
+  CONVERTED
+  ON_HOLD
+  CLOSED
+}
+
+enum NeedCloseType {
+  SELF_RESOLVED
+  REFERRED_ELSEWHERE
+  NOT_PROGRESSED
+  WITHDRAWN
+  CONVERTED_TO_ACTIVITY
+}
+
+// 주요/추가수요/후속
+enum NeedActivityLinkType {
+  PRIMARY
+  ADDITIONAL
+  FOLLOWUP
+}
+
+enum ActivityManagementType {
+  BUSINESS
+  ORG_ACTIVITY
+}
+
+enum Mission {
+  CONSUMER_GROWTH
+  PRODUCER_SUSTAINABILITY
+  SHARED_RESOURCE_EXPANSION
+}
+
+// v0.1 §3.2 공통 활동 상태
+enum ActivityStatus {
+  PLANNING
+  PENDING_APPROVAL
+  PREPARING
+  IN_PROGRESS
+  COMPLETED
+  CLOSED
+  ON_HOLD
+  CANCELLED
+}
+
+// 제안/수락/진행/종료/취소
+enum AssignmentStatus {
+  PROPOSED
+  ACCEPTED
+  IN_PROGRESS
+  ENDED
+  CANCELLED
+}
+
+// 유급/무급동의/혼합분리필요/미확인
+enum CompensationBasis {
+  PAID
+  UNPAID_CONSENT
+  MIXED_NEEDS_SPLIT
+  UNCONFIRMED
+}
+
+// 시간/전문역량/실행/관계/자원/지식/거버넌스/돌봄유지
+enum ContributionType {
+  TIME
+  EXPERTISE
+  EXECUTION
+  RELATIONSHIP
+  RESOURCE
+  KNOWLEDGE
+  GOVERNANCE
+  CARE
+}
+
+// v1.0 §5: 자기보고도 증거유형으로 인정하되 등급 표시
+enum ContributionEvidenceLevel {
+  SELF_REPORTED
+  PARTICIPANT_CONFIRMED
+  DOCUMENTED
+}
+
+// 초안/제출/보완요청/확인 + 버전 대체(SUPERSEDED)·취소
+enum ContributionStatus {
+  DRAFT
+  SUBMITTED
+  NEEDS_REVISION
+  CONFIRMED
+  SUPERSEDED
+  CANCELLED
+}
+
+enum AttachmentEntityType {
+  NEED
+  ACTIVITY
+  CONTRIBUTION
+}
+
+enum NotificationType {
+  REVISION_REQUESTED
+  CONTRIBUTION_CONFIRMED
+  ASSIGNMENT_CHANGED
+  NEED_ASSIGNED
+  GENERIC
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  STATUS_CHANGE
+  CONFIRM
+  ARCHIVE
+  EXPORT
+}
+
+enum SystemOfRecord {
+  NOTION
+  NEW_SYSTEM
+}
+
+enum MigrationRunStatus {
+  RUNNING
+  SUCCEEDED
+  FAILED
+  PARTIAL
+}
+
+// ─────────────────────────────────────────────────────────────
+// 분류 사전 (경량 버전 — 전체 지표·분류 사전(S01)은 R2/R4에서 확장)
+// ─────────────────────────────────────────────────────────────
+
+model Classification {
+  id     String  @id @default(uuid())
+  domain String // 예: "ACTIVITY_SERVICE_CATEGORY"
+  code   String
+  label  String
+  active Boolean @default(true)
+
+  activityLinks ActivityClassification[]
+
+  @@unique([domain, code])
+  @@map("classifications")
+}
+
+model ActivityClassification {
+  id               String @id @default(uuid())
+  activityId       String
+  classificationId String
+
+  activity       Activity       @relation(fields: [activityId], references: [id])
+  classification Classification @relation(fields: [classificationId], references: [id])
+
+  @@unique([activityId, classificationId])
+  @@map("activity_classifications")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 표시번호 채번 (ACT-0001 등 사람이 읽는 번호를 원자적으로 발급)
+// ─────────────────────────────────────────────────────────────
+
+model DisplaySequence {
+  prefix    String @id // "SUB" | "ACT" | "NEED" | "CONT" ...
+  lastValue Int    @default(0)
+
+  @@map("display_sequences")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 주체·계정·권한
+// ─────────────────────────────────────────────────────────────
+
+// v0.1 P01 — 사람과 단체를 하나로 통합한 주체 DB (조합의 기본 설계 선택)
+model Subject {
+  id                   String        @id @default(uuid())
+  displayId            String        @unique
+  type                 SubjectType
+  name                 String
+  previousNames        String[]      @default([])
+  status               SubjectStatus @default(ACTIVE)
+  region               String?
+  expertiseTags        String[]      @default([])
+  // 연락처는 제한 필드: 조회 자체를 권한표(v0.1 §4.10)로 통제해야 하며 스키마만으로는 보호되지 않는다.
+  contactInfo          Json?
+  contactConsent       Json?
+  responsibleAccountId String?
+  confirmedAt          DateTime?
+
+  sourceUrl  String?
+  legacyId   String?
+  visibility Visibility @default(TEAM)
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  createdBy  String?
+  updatedBy  String?
+  archivedAt DateTime?
+
+  account             Account?
+  assignments         ActivityAssignment[]
+  contributions       Contribution[]
+  raisedNeeds         Need[]               @relation("NeedRaisedBySubject")
+  beneficiaryOfNeeds  Need[]               @relation("NeedBeneficiarySubject")
+  organizedActivities Activity[]           @relation("ActivityOrganizerSubject")
+
+  @@map("subjects")
+}
+
+// 계정(로그인 자격)과 사람은 별개다 — v1.0 §3
+model Account {
+  id        String        @id @default(uuid())
+  email     String?       @unique
+  phone     String?       @unique
+  status    AccountStatus @default(PENDING)
+  subjectId String?       @unique
+  subject   Subject?      @relation(fields: [subjectId], references: [id])
+
+  // ADR-0002: 임원·재무·운영관리자 역할은 TOTP 2단계 인증을 추가로 요구한다.
+  // 비밀키는 애플리케이션이 암호화해 저장한다 — 평문 저장 금지.
+  totpSecretCiphertext String?
+  totpEnabledAt        DateTime?
+
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  permissionGrants  PermissionGrant[]
+  notifications     Notification[]
+  loginTokens       LoginToken[]
+  sessions          Session[]
+  totpRecoveryCodes TotpRecoveryCode[]
+
+  @@map("accounts")
+}
+
+// FR-01: 만료 초대 사용 불가, 탈퇴·중지 계정 접근 차단
+model Invitation {
+  id                 String           @id @default(uuid())
+  contact            String
+  // 원문 토큰은 저장하지 않는다 — 해시만 저장해 DB 유출이 곧바로 초대 링크 탈취로
+  // 이어지지 않게 한다 (아래 LoginToken과 동일한 원칙).
+  tokenHash          String           @unique
+  expiresAt          DateTime
+  status             InvitationStatus @default(PENDING)
+  invitedByAccountId String
+  prelinkedSubjectId String?
+  suggestedRole      PermissionRole?
+  acceptedAccountId  String?          @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("invitations")
+}
+
+// ADR-0002: 이메일 매직링크 로그인 토큰. 초대(Invitation)는 최초 1회 가입용이고,
+// LoginToken은 이미 계정이 있는 사람이 매번 로그인할 때 쓴다.
+model LoginToken {
+  id        String            @id @default(uuid())
+  accountId String
+  account   Account           @relation(fields: [accountId], references: [id])
+  tokenHash String            @unique
+  purpose   LoginTokenPurpose @default(LOGIN)
+
+  expiresAt          DateTime
+  consumedAt         DateTime?
+  requestedIp        String?
+  requestedUserAgent String?
+
+  createdAt DateTime @default(now())
+
+  @@index([accountId])
+  @@map("login_tokens")
+}
+
+// ADR-0002: DB 기반 세션 — 계정을 정지·탈퇴 처리하면 그 순간부터 접근을 막아야
+// 하므로(FR-01) 매 요청마다 서버에서 상태를 확인할 수 있는 세션이어야 한다.
+// pendingSecondFactor가 true인 동안은 로그인이 완료된 것이 아니다: TOTP가 필요한
+// 역할인데 아직 코드를 확인하지 않은 상태를 뜻한다.
+model Session {
+  id               String  @id @default(uuid())
+  accountId        String
+  account          Account @relation(fields: [accountId], references: [id])
+  sessionTokenHash String  @unique
+
+  pendingSecondFactor Boolean @default(false)
+
+  createdAt  DateTime  @default(now())
+  lastUsedAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  userAgent  String?
+  ipAddress  String?
+
+  @@index([accountId])
+  @@map("sessions")
+}
+
+// ADR-0002: TOTP 기기를 분실했을 때의 복구 수단. 발급 시 10개를 만들고, 코드는
+// 해시로 저장하며 한 번 쓰면 재사용할 수 없다.
+model TotpRecoveryCode {
+  id        String    @id @default(uuid())
+  accountId String
+  account   Account   @relation(fields: [accountId], references: [id])
+  codeHash  String
+  usedAt    DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@unique([accountId, codeHash])
+  @@map("totp_recovery_codes")
+}
+
+// 로그인 요청 속도 제한 — 시도 하나당 행 하나를 남기고, 창(window) 밖으로 나간
+// 오래된 행은 다음 확인 때 같은 (scope, key)에 대해 지워 표는 계속 작지만 유지된다.
+// Redis 등 별도 인프라 없이 이미 있는 Postgres만으로 처리한다(ADR-0001).
+model RateLimitAttempt {
+  id        String   @id @default(uuid())
+  scope     String // "login_request" | "totp_verify"
+  key       String // scope별 제한 단위: 이메일, 계정 ID 등
+  createdAt DateTime @default(now())
+
+  @@index([scope, key, createdAt])
+  @@map("rate_limit_attempts")
+}
+
+// v0.1 §4.10 "권한 부여 DB": 역할·담당 범위·기간·승인자
+model PermissionGrant {
+  id                 String         @id @default(uuid())
+  accountId          String
+  role               PermissionRole
+  scopeType          ScopeType      @default(GLOBAL)
+  scopeId            String? // scopeType=ACTIVITY면 Activity.id, ORG_UNIT이면 Subject.id
+  startDate          DateTime       @default(now())
+  endDate            DateTime?
+  grantedByAccountId String
+
+  createdAt DateTime @default(now())
+
+  account Account @relation(fields: [accountId], references: [id])
+
+  @@index([accountId, role])
+  @@map("permission_grants")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 상담·수요
+// ─────────────────────────────────────────────────────────────
+
+// FR-08: 미배정 접수 가능, 진행 전 담당자 지정
+model Need {
+  id         String      @id @default(uuid())
+  displayId  String      @unique
+  title      String
+  content    String
+  channel    NeedChannel
+  receivedAt DateTime
+
+  raisedBySubjectId    String?
+  raisedBySubject      Subject? @relation("NeedRaisedBySubject", fields: [raisedBySubjectId], references: [id])
+  beneficiarySubjectId String?
+  beneficiarySubject   Subject? @relation("NeedBeneficiarySubject", fields: [beneficiarySubjectId], references: [id])
+
+  assigneeAccountId String?
+  status            NeedStatus @default(RECEIVED)
+  urgency           String?
+  nextAction        String?
+  nextActionDate    DateTime?
+
+  // 금액은 부동소수점으로 저장하지 않는다 (v1.0 §7 공통 규칙)
+  budgetMin Decimal? @db.Decimal(14, 2)
+  budgetMax Decimal? @db.Decimal(14, 2)
+
+  closeType   NeedCloseType?
+  closeReason String?
+
+  sourceUrl  String?
+  legacyId   String?
+  visibility Visibility @default(TEAM)
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  createdBy  String?
+  updatedBy  String?
+  archivedAt DateTime?
+
+  activityLinks NeedActivityLink[]
+  contributions Contribution[]
+
+  @@map("needs")
+}
+
+// v0.1 §1.3: 필요 ↔ 활동은 N:M. R1은 대부분 0~1건이지만, 이후 릴리스에서
+// "여러 필요를 한 사업으로 묶기"(FR-14, R2)가 그대로 들어오도록 처음부터 N:M로 둔다.
+model NeedActivityLink {
+  id                   String               @id @default(uuid())
+  needId               String
+  activityId           String
+  linkType             NeedActivityLinkType @default(PRIMARY)
+  linkedAt             DateTime             @default(now())
+  confirmedByAccountId String
+
+  need     Need     @relation(fields: [needId], references: [id])
+  activity Activity @relation(fields: [activityId], references: [id])
+
+  @@unique([needId, activityId, linkType])
+  @@map("need_activity_links")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 활동(공통대장)과 참여
+// ─────────────────────────────────────────────────────────────
+
+// v0.1 A01 — 사업/조직활동/교육 등의 공통 상위 개념. 유형별 상세(A02/A03)는 R2/R3에서 추가한다.
+model Activity {
+  id             String                 @id @default(uuid())
+  displayId      String                 @unique
+  title          String
+  managementType ActivityManagementType
+  missions       Mission[]              @default([])
+  purpose        String
+
+  parentActivityId String?
+  parentActivity   Activity?  @relation("ActivityParent", fields: [parentActivityId], references: [id])
+  childActivities  Activity[] @relation("ActivityParent")
+
+  managerAccountId   String
+  organizerSubjectId String?
+  organizerSubject   Subject? @relation("ActivityOrganizerSubject", fields: [organizerSubjectId], references: [id])
+
+  status     ActivityStatus @default(PLANNING)
+  visibility Visibility     @default(TEAM)
+
+  plannedStartDate DateTime?
+  plannedEndDate   DateTime?
+  actualStartDate  DateTime?
+  actualEndDate    DateTime?
+
+  budgetBaseline Decimal? @db.Decimal(14, 2)
+
+  closeEvaluationNote String?
+  closedAt            DateTime?
+
+  sourceUrl String?
+  legacyId  String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  createdBy  String?
+  updatedBy  String?
+  archivedAt DateTime?
+
+  // 정정 이력(v0.1 §3.2 "종료 후 수정은 정정 이력으로") — 기여의 revisionOfId/
+  // supersededByContributionId와 같은 패턴이다. 종료·취소된 활동은 직접 고칠 수
+  // 없고, 대신 이 필드로 원본을 가리키는 새 행을 만든다. 새 행이 생기면
+  // 원본에 supersededByActivityId를 채워 "더 이상 현재 기록이 아님"을 표시한다
+  // (기여와 달리 별도 확인 절차 없이 만드는 즉시 새 행이 현재 기록이 된다 —
+  // 책임자 본인이 정정하는 것이라 남이 확인해줄 대상이 없기 때문이다).
+  revisionOfId String?
+  revisionOf   Activity?  @relation("ActivityRevision", fields: [revisionOfId], references: [id])
+  revisions    Activity[] @relation("ActivityRevision")
+
+  supersededByActivityId String? @unique
+
+  needLinks       NeedActivityLink[]
+  assignments     ActivityAssignment[]
+  contributions   Contribution[]
+  classifications ActivityClassification[]
+
+  @@map("activities")
+}
+
+// v0.1 A05 — 배정(계획)과 기여(실적)는 분리한다: "배치만으로 실적 생성 금지" (FR-05)
+model ActivityAssignment {
+  id         String @id @default(uuid())
+  activityId String
+  subjectId  String
+
+  activity Activity @relation(fields: [activityId], references: [id])
+  subject  Subject  @relation(fields: [subjectId], references: [id])
+
+  role                  String
+  status                AssignmentStatus   @default(PROPOSED)
+  startDate             DateTime?
+  endDate               DateTime?
+  plannedMinutes        Int?
+  compensationBasis     CompensationBasis?
+  conditionsDocumentUrl String?
+
+  requestedAt        DateTime  @default(now())
+  decidedByAccountId String?
+  decidedAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contributions Contribution[]
+
+  @@map("activity_assignments")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 기여 원장
+// ─────────────────────────────────────────────────────────────
+
+// v0.1 A06 / v1.0 BR-01~BR-06
+//
+// DB 제약(마이그레이션에 raw SQL로 추가):
+//   CHECK (NOT (activity_id IS NOT NULL AND need_id IS NOT NULL))
+//   — 활동과 필요 양쪽에 동시에 걸치는 것만 막는다. 다른 하나가 반드시 있어야 한다는
+//   요구(제출 시점부터는 활동 또는 필요 중 하나가 필요하다, BR-01)는 애플리케이션에서
+//   검증한다 — DRAFT는 "임시저장에는 활동이 없어도 된다"(BR-01)를 만족해야 하므로 DB
+//   제약으로 "정확히 하나"를 강제하면 임시저장 자체가 불가능해진다.
+//
+// 버전 관리(BR-03~BR-05): 확인된 기여를 수정하면 새 행을 만들어 revisionOfId로 원본을
+// 가리키게 한다. 새 행이 확인되기 전까지 집계는 원본(status=CONFIRMED)만 사용하고,
+// 새 행이 확인되면 원본에 supersededByContributionId를 채우고 원본 status를 SUPERSEDED로
+// 바꾼다. 두 값을 더해 집계하지 않기 위한 장치다.
+model Contribution {
+  id            String @id @default(uuid())
+  displayId     String @unique
+  submissionKey String @unique // 제출 버튼 중복 클릭 방지(BR-06)의 멱등성 키
+
+  contributorSubjectId String
+  contributorSubject   Subject @relation(fields: [contributorSubjectId], references: [id])
+  authorAccountId      String // 대리입력 식별을 위해 실제 기여자와 분리 보관
+
+  activityId String?
+  activity   Activity? @relation(fields: [activityId], references: [id])
+  needId     String?
+  need       Need?     @relation(fields: [needId], references: [id])
+
+  assignmentId String?
+  assignment   ActivityAssignment? @relation(fields: [assignmentId], references: [id])
+
+  performedDate     DateTime
+  contributionType  ContributionType
+  minutes           Int? // NULL=미상. 0과 구별한다 (v1.0 §7 공통 규칙)
+  compensationBasis CompensationBasis         @default(UNCONFIRMED)
+  expertiseArea     String?
+  description       String? // DRAFT는 비어 있을 수 있다; 제출 시점부터 필수(애플리케이션 검증)
+  evidenceLevel     ContributionEvidenceLevel @default(SELF_REPORTED)
+
+  status ContributionStatus @default(DRAFT)
+
+  submittedAt          DateTime?
+  confirmedByAccountId String?
+  confirmedAt          DateTime?
+  revisionReason       String?
+
+  revisionOfId String?
+  revisionOf   Contribution?  @relation("ContributionRevision", fields: [revisionOfId], references: [id])
+  revisions    Contribution[] @relation("ContributionRevision")
+
+  supersededByContributionId String? @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attachments Attachment[]
+
+  @@index([contributorSubjectId, performedDate])
+  @@index([activityId, status])
+  @@map("contributions")
+}
+
+// ─────────────────────────────────────────────────────────────
+// 첨부파일 · 알림 · 감사기록
+// ─────────────────────────────────────────────────────────────
+
+// FR-09: entityType/entityId는 다형 참조라 DB 외래키로 강제할 수 없다 —
+// 대상 레코드 존재 여부는 애플리케이션 계층에서 검증한다.
+model Attachment {
+  id         String               @id @default(uuid())
+  entityType AttachmentEntityType
+  entityId   String
+
+  contributionId String?
+  contribution   Contribution? @relation(fields: [contributionId], references: [id])
+
+  fileKey    String
+  fileName   String
+  mimeType   String
+  sizeBytes  Int
+  visibility Visibility @default(RESTRICTED)
+
+  uploadedByAccountId String
+  uploadedAt          DateTime  @default(now())
+  deletedAt           DateTime?
+
+  replacesAttachmentId String?
+  replacesAttachment   Attachment?  @relation("AttachmentReplace", fields: [replacesAttachmentId], references: [id])
+  replacedBy           Attachment[] @relation("AttachmentReplace")
+
+  @@index([entityType, entityId])
+  @@map("attachments")
+}
+
+// FR-10: 보완요청·확인결과·배정변경을 앱 안에서 확인 (외부 메일 발송은 별도 설정 후 적용)
+model Notification {
+  id        String  @id @default(uuid())
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id])
+
+  type              NotificationType
+  title             String
+  body              String?
+  relatedEntityType String?
+  relatedEntityId   String?
+
+  status NotificationStatus @default(PENDING)
+  readAt DateTime?
+  sentAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([accountId, status])
+  @@map("notifications")
+}
+
+// FR-11: 대상, 행위, 변경자, 시점, 변경 전후 정보를 남긴다
+model AuditLog {
+  id             String      @id @default(uuid())
+  entityType     String
+  entityId       String
+  action         AuditAction
+  actorAccountId String?
+  occurredAt     DateTime    @default(now())
+  beforeData     Json?
+  afterData      Json?
+  reason         String?
+
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Notion 이전 출처 관리 (FR-12)
+// ─────────────────────────────────────────────────────────────
+
+model MigrationRun {
+  id                   String             @id @default(uuid())
+  sourceSystem         SystemOfRecord     @default(NOTION)
+  startedAt            DateTime           @default(now())
+  finishedAt           DateTime?
+  status               MigrationRunStatus @default(RUNNING)
+  triggeredByAccountId String
+  summary              Json?
+
+  sourceLinks SourceLink[]
+
+  @@map("migration_runs")
+}
+
+// 원본 ID ↔ 신규 ID 대응표. 재실행해도 같은 원본은 같은 신규 레코드로 갱신되도록
+// (entityType, entityId, sourceSystem)를 유일 키로 둔다 — 이름을 키로 쓰지 않는다.
+model SourceLink {
+  id               String         @id @default(uuid())
+  entityType       String
+  entityId         String
+  sourceSystem     SystemOfRecord @default(NOTION)
+  sourcePageId     String?
+  sourceDbId       String?
+  sourceUrl        String?
+  sourceModifiedAt DateTime?
+  extractedAt      DateTime?
+  contentHash      String?
+
+  migrationRunId String?
+  migrationRun   MigrationRun? @relation(fields: [migrationRunId], references: [id])
+
+  @@unique([entityType, entityId, sourceSystem])
+  @@index([sourceSystem, sourcePageId])
+  @@map("source_links")
+}
+
+// BR-13: "데이터의 최종 수정 시스템은 지정된 범위마다 하나" — Notion과 신규 시스템 중
+// 어느 쪽이 정본인지 범위별로 명시적으로 기록한다 (v0.2 §4.1 전환대장의 최소 버전).
+model SystemOfRecordAssignment {
+  id                 String         @id @default(uuid())
+  scopeType          String // "GLOBAL" | "ACTIVITY" | "NEED" | "SUBJECT" | ...
+  scopeId            String?
+  systemOfRecord     SystemOfRecord
+  effectiveFrom      DateTime       @default(now())
+  note               String?
+  decidedByAccountId String
+
+  @@unique([scopeType, scopeId])
+  @@map("system_of_record_assignments")
+}
