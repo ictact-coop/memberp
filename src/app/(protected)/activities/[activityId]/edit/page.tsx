@@ -7,6 +7,8 @@ import { getSelfAndDescendantActivityIds } from "@/lib/activity-hierarchy";
 const ERROR_MESSAGES: Record<string, string> = {
   invalid: "제목·목적·유형·책임자·미션(1개 이상)을 모두 입력하세요.",
   invalid_manager: "선택한 책임자 계정을 확인할 수 없습니다.",
+  invalid_approver: "선택한 결재 위임 대상 계정을 확인할 수 없습니다.",
+  approver_same_as_manager: "결재 위임 대상은 책임자 본인과 다른 계정이어야 합니다.",
   invalid_dates: "종료 예정일은 시작 예정일보다 빠를 수 없습니다.",
   invalid_parent: "선택한 상위 활동을 확인할 수 없습니다.",
   invalid_parent_cycle: "그 활동을 상위 활동으로 지정하면 순환이 생깁니다.",
@@ -168,6 +170,30 @@ export default async function EditActivityPage({
         </select>
         <p style={{ fontSize: 12, color: "#888888", marginTop: -8, marginBottom: 12 }}>
           책임자를 바꾸면 이후 상태 전이·신청 수락은 새 책임자만 할 수 있습니다.
+        </p>
+
+        <label htmlFor="approverAccountId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+          결재 위임 (선택)
+        </label>
+        <select
+          id="approverAccountId"
+          name="approverAccountId"
+          defaultValue={activity.approverAccountId ?? ""}
+          style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
+        >
+          <option value="">위임 안 함 — 책임자 본인이 승인</option>
+          {accounts
+            .filter((account) => account.id !== activity.managerAccountId)
+            .map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.email ?? account.phone} {account.subject?.name ? `(${account.subject.name})` : ""}
+              </option>
+            ))}
+        </select>
+        <p style={{ fontSize: 12, color: "#888888", marginTop: -8, marginBottom: 12 }}>
+          지정하면 "준비 승인" 단계의 승인·반려는 이 계정만 할 수 있고, 책임자
+          본인은 자기 활동을 스스로 승인할 수 없습니다. 그 외 처리(승인 요청·시작·
+          종료 등)는 여전히 책임자만 할 수 있습니다.
         </p>
 
         <label htmlFor="visibility" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>

@@ -67,6 +67,19 @@ export default async function ActivityDetailPage({
   }
 
   const isManager = activity.managerAccountId === active.account.id;
+  // 결재 위임(v0.1 §4.10): approverAccountId가 있고 지금 승인 대기 상태면 승인·
+  // 반려는 위임받은 계정 몫이다 — 책임자 본인은 자기 결재를 할 수 없다.
+  const isApprover = activity.approverAccountId !== null && activity.approverAccountId === active.account.id;
+  const isDelegatedApprovalPending =
+    activity.status === "PENDING_APPROVAL" && activity.approverAccountId !== null;
+  const canManageStatus = isDelegatedApprovalPending ? isApprover : isManager;
+  const approverAccount =
+    activity.approverAccountId && (isManager || isApprover)
+      ? await prisma.account.findUnique({
+          where: { id: activity.approverAccountId },
+          select: { email: true, phone: true },
+        })
+      : null;
   const myAssignment = active.account.subjectId
     ? activity.assignments.find((assignment) => assignment.subjectId === active.account.subjectId)
     : undefined;
@@ -149,6 +162,18 @@ export default async function ActivityDetailPage({
               <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>예산</dt>
               <dd style={{ display: "inline", margin: "0 0 0 6px" }}>
                 {Number(activity.budgetBaseline).toLocaleString("ko-KR")}원
+              </dd>
+            </>
+          )}
+          {approverAccount && (
+            <>
+              <br />
+              <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>
+                결재 위임
+              </dt>
+              <dd style={{ display: "inline", margin: "0 0 0 6px" }}>
+                {approverAccount.email ?? approverAccount.phone}
+                {isApprover ? " (나)" : ""}
               </dd>
             </>
           )}
@@ -258,7 +283,14 @@ export default async function ActivityDetailPage({
         <p style={{ color: "var(--color-danger)", marginTop: 12 }}>{ERROR_MESSAGES[error]}</p>
       )}
 
-      {isManager && (
+      {isManager && !canManageStatus && (
+        <p className="card" style={{ color: "var(--color-text-muted)", marginTop: 16 }}>
+          이 활동은 {approverAccount?.email ?? approverAccount?.phone}에게 결재를 위임했습니다. 승인·반려
+          대기 중입니다.
+        </p>
+      )}
+
+      {canManageStatus && (
         <div style={{ marginTop: 16 }}>
           <h2 style={{ fontSize: 16 }}>상태 관리</h2>
           {availableActivityTransitions(activity.status).length === 0 ? (

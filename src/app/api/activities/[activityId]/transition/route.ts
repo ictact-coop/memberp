@@ -20,11 +20,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
     return NextResponse.redirect(new URL("/activities", request.url));
   }
 
-  // 참여 신청 수락·거절·종료와 같은 원칙: 그 활동의 책임자만 상태를 바꿀 수 있다.
-  if (activity.managerAccountId !== active.account.id) {
-    return NextResponse.redirect(new URL(`/activities/${activityId}?error=forbidden`, request.url));
-  }
-
   const formData = await request.formData();
   const actionRaw = formData.get("action");
   const reasonRaw = formData.get("reason");
@@ -35,6 +30,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
   }
   const action = actionRaw as ActivityTransitionAction;
   const rule = ACTIVITY_TRANSITIONS[action];
+
+  // 참여 신청 수락·거절·종료와 같은 원칙: 그 활동의 책임자만 상태를 바꿀 수 있다.
+  // 다만 결재 위임(approverAccountId)이 있으면 "준비 승인" 단계의 승인·반려만은
+  // 위임받은 계정 몫이다 — 자기 결재를 막기 위해 책임자 본인은 이 두 전이를
+  // 할 수 없다(그 외 전이는 위임 여부와 무관하게 여전히 책임자만 가능).
+  const isManager = activity.managerAccountId === active.account.id;
+  const isDelegatableApproval = action === "approve" || action === "reject";
+  const isAuthorized =
+    isDelegatableApproval && activity.approverAccountId
+      ? activity.approverAccountId === active.account.id
+      : isManager;
+  if (!isAuthorized) {
+    return NextResponse.redirect(new URL(`/activities/${activityId}?error=forbidden`, request.url));
+  }
 
   if (!rule.from.includes(activity.status)) {
     return NextResponse.redirect(new URL(`/activities/${activityId}?error=invalid_transition`, request.url));
