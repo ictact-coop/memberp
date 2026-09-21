@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { requireRole } from "@/lib/auth/roles";
 import { prisma } from "@/lib/prisma";
+import { countSubjectReferences } from "@/lib/subject-merge";
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid: "합칠 기구 두 곳을 모두 선택하세요.",
@@ -44,18 +45,7 @@ export default async function MergeOrgUnitsPage({
   }
   const effectiveError = error ?? previewError ?? undefined;
 
-  const counts =
-    source && target
-      ? await Promise.all([
-          prisma.need.count({ where: { raisedBySubjectId: source.id } }),
-          prisma.need.count({ where: { beneficiarySubjectId: source.id } }),
-          prisma.activity.count({ where: { organizerSubjectId: source.id } }),
-          prisma.activityAssignment.count({ where: { subjectId: source.id } }),
-          prisma.contribution.count({ where: { contributorSubjectId: source.id } }),
-          prisma.permissionGrant.count({ where: { scopeType: "ORG_UNIT", scopeId: source.id } }),
-          prisma.account.count({ where: { subjectId: source.id } }),
-        ])
-      : null;
+  const counts = source && target ? await countSubjectReferences(prisma, source.id) : null;
 
   return (
     <section>
@@ -78,13 +68,13 @@ export default async function MergeOrgUnitsPage({
               {source.name}을(를) 가리키던 다음 항목이 {target.name}(으)로 옮겨갑니다
             </p>
             <ul style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.9 }}>
-              <li>제기한 상담·수요: {counts[0]}건</li>
-              <li>대상(수혜) 상담·수요: {counts[1]}건</li>
-              <li>주최한 활동: {counts[2]}건</li>
-              <li>참여 배정: {counts[3]}건</li>
-              <li>기여: {counts[4]}건</li>
-              <li>권한 범위(역할 부여): {counts[5]}건</li>
-              <li>연결된 로그인 계정: {counts[6]}개</li>
+              <li>제기한 상담·수요: {counts.raisedNeeds}건</li>
+              <li>대상(수혜) 상담·수요: {counts.beneficiaryNeeds}건</li>
+              <li>주최한 활동: {counts.organizedActivities}건</li>
+              <li>참여 배정: {counts.activityAssignments}건</li>
+              <li>기여: {counts.contributions}건</li>
+              <li>권한 범위(역할 부여): {counts.orgUnitPermissionGrants}건</li>
+              <li>연결된 로그인 계정: {counts.linkedAccounts}개</li>
             </ul>
             <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
               {source.name} 자체의 이름·지역·전문영역 등 정보는 옮겨지지 않습니다 — 필요하면

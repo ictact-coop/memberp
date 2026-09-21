@@ -41,7 +41,9 @@ src/
       admin/
         page.tsx              관리자 설정 허브 — 하위 도구로 이동하는 링크 모음
         invitations/page.tsx  초대 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 발급·재발송·취소, 주체 미리 연결
+        subjects/page.tsx     사람 목록(SECRETARIAT/SYSTEM_ADMIN 전용) — 이름 검색, 동명이인 병합 진입점
         subjects/new/page.tsx 사람 미리 등록(SECRETARIAT/SYSTEM_ADMIN 전용) — 계정 없이 사람 정보만 등록
+        subjects/merge/page.tsx  사람 병합 — 선택 → 미리보기(계정 상태·개수 조회) → 확정 2단계
         roles/page.tsx        역할 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 역할 부여·종료
         org-units/page.tsx    기구 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 기구 등록·목록·보관·복원
         org-units/[id]/edit/page.tsx  기구 정보 수정 — 등록과 같은 필드
@@ -101,6 +103,7 @@ src/
           [id]/revoke/route.ts       POST: 초대 취소
         subjects/
           create/route.ts            POST: 사람(Subject type=PERSON) 미리 등록(계정 없음)
+          merge/route.ts             POST: 사람 병합(참조 6종 이전 후 source 보관, 계정 둘 다 있으면 거부)
         org-units/
           create/route.ts            POST: 기구(Subject type=ORG_UNIT) 등록
           [id]/update/route.ts       POST: 기구 정보 수정(등록과 같은 필드·검증)
@@ -125,6 +128,7 @@ src/
     activity-labels.ts   ActivityManagementType·Mission·Visibility·ActivityStatus 한글 라벨
     activity-status.ts   활동 상태 전이표(ACTIVITY_TRANSITIONS), 전이 동작 한글 라벨
     activity-hierarchy.ts 상위 활동 순환 방지 — 자신+모든 하위 활동 id 계산
+    subject-merge.ts     Subject 참조 6종 열거·개수 세기·이전 — 기구 병합·사람 병합 공유
     need-labels.ts       NeedChannel·NeedStatus·NeedCloseType 한글 라벨
     need-status.ts       상담·수요 상태 전이표(NEED_TRANSITIONS), 전이 동작 한글 라벨
     role-labels.ts       PermissionRole·ScopeType enum의 한글 라벨
@@ -854,6 +858,9 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있고, `/api/admin/org-units/create`
   source에 로그인 계정이 연결돼 있으면(`Account.subjectId`, 원래 기구는 로그인할
   일이 없어 거의 생기지 않는 상태) 그 계정도 target으로 옮긴다. 전부 한
   트랜잭션 안에서 처리해, 일부만 옮겨진 채 실패하는 중간 상태가 생기지 않는다.
+  이 여섯 가지 참조 열거·개수 세기·이전 로직은 `src/lib/subject-merge.ts`에
+  모아 아래 "사람 주체 병합 화면"과 공유한다 — Subject를 가리키는 새 필드가
+  생기면 이 파일 한 곳만 고치면 두 병합 화면 모두에 반영된다.
 - **미리보기 없이 바로 실행하지 않는다**: 화면은 두 단계다. 먼저 없앨 기구·남길
   기구를 고르는 GET 폼, 그다음 "이 여섯 항목이 몇 건씩 옮겨진다"는 개수를
   실제로 조회해 보여주는 미리보기(같은 화면을 쿼리스트링으로 다시 그린 것)와
@@ -875,6 +882,39 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있고, `/api/admin/org-units/create`
   추가하지 않고 이미 있던 `AuditLog.reason`·JSON 필드로 기록했다.
 - **정직하게 남겨둔 것**: 병합할 후보를 자동으로 찾아 추천하는 기능은 없다 —
   관리자가 목록에서 직접 골라야 한다.
+
+### 사람 목록·병합 화면 (`/admin/subjects`, `/admin/subjects/merge`)
+
+동명이인이거나 중복 등록된 사람(Subject type=`PERSON`) 두 건을 하나로 합친다 —
+"아직 없는 것"에 남아 있던 "사람 주체 동명이인·중복 정리". 기구 병합과 원리는
+같지만(참조 이전은 `src/lib/subject-merge.ts` 공유), 사람은 원래 로그인
+계정이 있는 게 정상이라는 점에서 실제로 다르게 부딪히는 지점이 있다.
+
+- **먼저 찾을 목록이 필요했다**: 기구는 원래 `/admin/org-units`에 전체 목록이
+  있었지만, 사람(PERSON) 주체는 등록 화면(`/admin/subjects/new`)만 있고
+  목록이 없어 "동명이인이 있는지" 눈으로 확인할 방법이 없었다. `/admin/subjects`를
+  새로 만들어 이름 검색(부분 일치)과 함께 표시번호·상태·지역·로그인 계정 연결
+  여부를 보여준다 — 관리자 허브의 "사람 미리 등록" 항목은 이 목록 화면(사람
+  관리)으로 통합했다.
+- **로그인 계정이 있는 쪽을 미리 보여준다**: 기구 병합 미리보기는 로그인 계정
+  존재 여부를 굳이 강조하지 않지만(원래 없는 게 정상이라), 사람 병합
+  미리보기는 두 사람 각각의 계정 상태(이메일 또는 "없음")를 맨 위에 표시하고,
+  선택 화면의 각 `<option>`에도 "계정: xxx@example.org"처럼 붙여 보여준다 —
+  실수로 로그인 계정이 있는 쪽을 없앨 쪽(source)으로 고르지 않게 하기 위함이다.
+- **둘 다 로그인 계정이 있으면 막는다(`error=account_conflict`)**: 기구
+  병합에서는 이례적 상태를 막는 방어 코드였지만, 사람 병합에서는 이 조건이
+  실제로 자주 걸린다 — 어느 로그인 정체성(이메일)을 남길지는 이 화면이 대신
+  정할 문제가 아니라 조합의 판단이 필요한 문제이기 때문이다. 한쪽만 계정이
+  있으면 정상적으로 병합되고, 그 계정은 target으로 옮겨간다(기구 병합과 동일).
+- **이전 이름을 잃지 않는다**: source와 target의 이름이 다르면(오타로 두 번
+  등록됐거나, 예전 이름으로 등록된 경우) target의 `previousNames`에 source의
+  이름을 추가한다 — 내 정보 수정 시 이름을 바꿀 때와 같은 필드를 재사용한다.
+  이름이 같으면(가장 흔한 "완전히 같은 이름 중복 등록" 경우) 아무것도
+  추가하지 않는다.
+- **정직하게 남겨둔 것**: 둘 다 로그인 계정이 있는 경우(같은 사람이 두 계정으로
+  각각 가입한 경우)의 실제 통합 — 어느 이메일로 로그인하게 할지, 기존 세션은
+  어떻게 할지 — 은 이 화면에서 처리하지 않는다. 그 경우는 계정 하나를 먼저
+  정지·탈퇴 처리해 "계정이 없는 쪽"으로 만든 뒤에야 이 화면으로 병합할 수 있다.
 
 ## 상태 이력 조회 화면 (`/admin/audit-log`)
 
@@ -1120,10 +1160,6 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있다(`/admin`의 다른 화면과 �
 
 - **역할별 화면 커스터마이징**: 지금은 "들어올 수 있는가/없는가"만 있고, 역할에 따라
   메뉴나 화면 내용 자체를 다르게 보여주는 것은 없다(v1.0 §8의 역할별 홈 화면 등).
-- **사람 주체 동명이인·중복 정리**: 기구는 병합 화면이 있다(`/admin/org-units/
-  merge`). 사람 주체끼리 병합하는 화면은 없다 — 로그인 계정·자기 확인이라는
-  정체성 문제가 얽혀 있어 범위를 넓히지 않았다(§"사람 미리 등록 화면"의 "정직하게
-  남겨둔 것" 참고).
 - **결재 위임·지급 확인**: 활동 책임자·상담 담당자가 "내가 담당한 항목의 변경
   이력만" 보는 화면은 이제 있다(`/my/audit-log`). 다만 '준비 승인'의 결재
   권한자를 책임자와 분리하는 위임 규정은 없어, 지금은 책임자 본인이 승인까지
@@ -1539,3 +1575,21 @@ npm run dev                  # http://localhost:3000
     `RateLimitAttempt` 표에 허용된 시도 수만큼만 행이 쌓이고(차단된 시도는
     행을 남기지 않음) 다음 확인 때 창 밖으로 나간 오래된 행이 실제로
     지워짐을 직접 확인(표가 무한정 커지지 않음)
+  - 사람 목록·병합(`/admin/subjects`, `/admin/subjects/merge`): 역할 없는
+    계정은 목록·병합 화면 접근과 `POST /api/admin/subjects/merge` 직접 호출
+    모두 `/forbidden`으로 차단됨을 확인; 같은 이름("김철수")으로 중복 등록한
+    두 사람을 목록 검색으로 실제로 찾아낸 뒤 병합하면 참조가 없는 쪽이
+    보관 처리됨을 확인; 계정이 있는 사람(A)을 계정 없는 사람(B)에 병합하면
+    미리보기에 두 사람의 계정 상태(이메일/"없음")가 정확히 표시되고, 확정
+    후 `Account.subjectId`가 실제로 B로 옮겨가며 A는 더 이상 어떤 계정과도
+    연결되지 않음을 확인; 이름이 다른 두 사람을 합치면 target의
+    `previousNames`에 source 이름이 추가되고, 이름이 완전히 같으면 아무것도
+    추가되지 않음을 확인; 상담·수요의 `raisedBySubjectId`·`beneficiarySubjectId`가
+    실제로 target으로 옮겨감을 확인; 둘 다 로그인 계정이 있는 두 사람을
+    합치려 하면 `error=account_conflict`로 거부되고 어느 쪽도 보관되지
+    않음(부분 실패 없음)을 확인; 같은 사람 선택·보관된 사람 선택·필수값
+    누락 각각 `same_subject`/`archived`/`invalid`로 거부됨을 확인; 병합된
+    사람은 상담·수요 접수 화면의 주체 선택지와 초대의 "미리 연결할 사람"
+    선택지에서 즉시 사라짐을 확인. 같은 코드를 공유하도록 리팩터링한
+    기구 병합 화면도 권한 부여(PermissionGrant) 참조 이전과 source 보관까지
+    회귀 없이 그대로 동작함을 재확인

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireRole } from "@/lib/auth/roles";
 import { prisma } from "@/lib/prisma";
 
@@ -33,6 +34,9 @@ export default async function NewSubjectPage({
 
   return (
     <section>
+      <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
+        <Link href="/admin/subjects">사람 목록</Link>
+      </p>
       <h1 style={{ fontSize: 20 }}>사람 미리 등록</h1>
       <p style={{ color: "var(--color-text-muted)", fontSize: 13 }}>
         아직 로그인 계정이 없는 사람의 정보를 미리 만들어 둡니다. 나중에 이 사람을 초대하면

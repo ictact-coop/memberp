@@ -4,7 +4,7 @@ import { ScreenPlaceholder } from "@/components/ScreenPlaceholder";
 
 const TOOLS = [
   { href: "/admin/invitations", label: "초대 관리", description: "이메일로 초대 발급·재발송·취소" },
-  { href: "/admin/subjects/new", label: "사람 미리 등록", description: "계정 없이 사람 정보만 먼저 등록(초대 시 연결용)" },
+  { href: "/admin/subjects", label: "사람 관리", description: "사람 목록·미리 등록·동명이인 병합" },
   { href: "/admin/roles", label: "역할 관리", description: "역할 부여·종료" },
   { href: "/admin/org-units", label: "기구 관리", description: "기구(Subject) 등록·목록" },
   { href: "/admin/classifications", label: "분류 관리", description: "지역·전문영역 분류표 등록·사용 중지" },

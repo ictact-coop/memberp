@@ -6,10 +6,10 @@ import { reassignSubjectReferences } from "@/lib/subject-merge";
 
 const ADMIN_ROLES = ["SECRETARIAT", "SYSTEM_ADMIN"] as const;
 
-// 기구 병합 확정. 화면(/admin/org-units/merge)의 미리보기 폼에서만 오는 것을
-// 전제하지만, 폼 POST는 화면 렌더링을 거치지 않고 바로 올 수 있어 여기서도
-// 화면과 같은 검증을 다시 한다. source를 가리키던 모든 참조를 target으로
-// 옮긴 뒤 source를 보관(archive)한다 — 실제로 지우지 않는다(v0.1 §2.1).
+// 사람 주체 병합 확정 — 기구 병합(api/admin/org-units/merge)과 같은 원리를
+// src/lib/subject-merge.ts로 공유한다. 다른 점은 둘 다 계정이 있는 경우를
+// "정상 범위 밖"으로 보고 막는다는 것 — 어느 로그인 정체성을 남길지는 이
+// 화면이 대신 정할 문제가 아니다.
 export async function POST(request: Request) {
   const active = await getActiveSession();
   if (!active) {
@@ -24,33 +24,32 @@ export async function POST(request: Request) {
   const targetIdRaw = formData.get("targetId");
 
   if (typeof sourceIdRaw !== "string" || !sourceIdRaw || typeof targetIdRaw !== "string" || !targetIdRaw) {
-    return NextResponse.redirect(new URL("/admin/org-units/merge?error=invalid", request.url));
+    return NextResponse.redirect(new URL("/admin/subjects/merge?error=invalid", request.url));
   }
   if (sourceIdRaw === targetIdRaw) {
-    return NextResponse.redirect(new URL("/admin/org-units/merge?error=same_subject", request.url));
+    return NextResponse.redirect(new URL("/admin/subjects/merge?error=same_subject", request.url));
   }
 
   const [source, target] = await Promise.all([
     prisma.subject.findUnique({ where: { id: sourceIdRaw } }),
     prisma.subject.findUnique({ where: { id: targetIdRaw } }),
   ]);
-  if (!source || !target || source.type !== "ORG_UNIT" || target.type !== "ORG_UNIT") {
-    return NextResponse.redirect(new URL("/admin/org-units/merge?error=not_found", request.url));
+  if (!source || !target || source.type !== "PERSON" || target.type !== "PERSON") {
+    return NextResponse.redirect(new URL("/admin/subjects/merge?error=not_found", request.url));
   }
   if (source.archivedAt || target.archivedAt) {
-    return NextResponse.redirect(new URL("/admin/org-units/merge?error=archived", request.url));
+    return NextResponse.redirect(new URL("/admin/subjects/merge?error=archived", request.url));
   }
 
-  // Account.subjectId는 유일 제약이다 — 두 기구 모두에 로그인 계정이 연결돼
-  // 있으면(원래는 기구가 로그인할 일이 없어 생기지 않아야 하는 상태다) 하나로
-  // 합칠 수 없다. 트랜잭션 안에서 실패하게 두는 대신 미리 걸러 분명한 이유를
-  // 보여준다.
+  // 사람은 로그인 계정이 있는 것이 정상이라, 기구 병합과 달리 "둘 다 계정이
+  // 있는 경우"를 실제로 자주 마주친다. 어느 계정(로그인 정체성)을 남길지는
+  // 조합의 판단이 필요한 문제라 이 화면에서 자동으로 정하지 않고 막는다.
   const [sourceAccount, targetAccount] = await Promise.all([
     prisma.account.findUnique({ where: { subjectId: source.id } }),
     prisma.account.findUnique({ where: { subjectId: target.id } }),
   ]);
   if (sourceAccount && targetAccount) {
-    return NextResponse.redirect(new URL("/admin/org-units/merge?error=account_conflict", request.url));
+    return NextResponse.redirect(new URL("/admin/subjects/merge?error=account_conflict", request.url));
   }
 
   const archivedAt = new Date();
@@ -58,6 +57,15 @@ export async function POST(request: Request) {
     await reassignSubjectReferences(tx, source.id, target.id);
     if (sourceAccount) {
       await tx.account.update({ where: { id: sourceAccount.id }, data: { subjectId: target.id } });
+    }
+
+    // 이름이 다르면 옛 이름을 잃지 않도록 target의 이전 이름 목록에 남긴다 —
+    // 내 정보 수정 시 이름을 바꿀 때와 같은 규칙(previousNames).
+    if (source.name !== target.name && !target.previousNames.includes(source.name)) {
+      await tx.subject.update({
+        where: { id: target.id },
+        data: { previousNames: { push: source.name } },
+      });
     }
 
     await tx.subject.update({
@@ -70,12 +78,12 @@ export async function POST(request: Request) {
         entityId: source.id,
         action: "ARCHIVE",
         actorAccountId: active.account.id,
-        reason: `기구 병합: ${target.displayId} · ${target.name}으로 참조를 옮기고 보관함`,
+        reason: `사람 병합: ${target.displayId} · ${target.name}으로 참조를 옮기고 보관함`,
         beforeData: { archivedAt: null },
         afterData: { archivedAt, mergedIntoSubjectId: target.id },
       },
     });
   });
 
-  return NextResponse.redirect(new URL("/admin/org-units", request.url));
+  return NextResponse.redirect(new URL("/admin/subjects", request.url));
 }
