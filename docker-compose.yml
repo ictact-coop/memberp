@@ -49,7 +49,16 @@ services:
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-공동체IT <login@example.org>}
       TOTP_ENCRYPTION_KEY: ${TOTP_ENCRYPTION_KEY:?TOTP_ENCRYPTION_KEY를 .env에 설정하세요 (openssl rand -base64 32)}
+      # 첨부파일: ATTACHMENT_STORAGE_DRIVER를 .env에서 "s3"로 설정하지 않는 한
+      # 아래 값은 쓰이지 않고 로컬 디스크(볼륨)를 그대로 쓴다.
       ATTACHMENT_STORAGE_DIR: /app/storage/attachments
+      ATTACHMENT_STORAGE_DRIVER: ${ATTACHMENT_STORAGE_DRIVER:-}
+      ATTACHMENT_S3_BUCKET: ${ATTACHMENT_S3_BUCKET:-}
+      ATTACHMENT_S3_REGION: ${ATTACHMENT_S3_REGION:-}
+      ATTACHMENT_S3_ENDPOINT: ${ATTACHMENT_S3_ENDPOINT:-}
+      ATTACHMENT_S3_FORCE_PATH_STYLE: ${ATTACHMENT_S3_FORCE_PATH_STYLE:-}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
     ports:
       - "3000:3000"
     volumes:
