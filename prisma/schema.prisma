@@ -209,6 +209,7 @@ enum AuditAction {
   STATUS_CHANGE
   CONFIRM
   ARCHIVE
+  EXPORT
 }
 
 enum SystemOfRecord {

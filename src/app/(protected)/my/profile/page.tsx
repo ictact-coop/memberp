@@ -70,11 +70,16 @@ export default async function MyProfilePage({
           알림 보기 →
         </Link>
       </p>
-      <p style={{ marginBottom: 24 }}>
+      <p style={{ marginBottom: 12 }}>
         <Link href="/my/audit-log" style={{ fontSize: 13, fontWeight: 600 }}>
           내 담당 이력 보기 →
         </Link>
       </p>
+      <form method="POST" action="/api/my/data-export" style={{ marginBottom: 24 }}>
+        <button type="submit" className="btn-outline" style={{ padding: "8px 14px", fontSize: 13 }}>
+          내 데이터 내보내기 (JSON)
+        </button>
+      </form>
 
       <h2 style={{ fontSize: 16 }}>연락처·관심 분야</h2>
       {error && ERROR_MESSAGES[error] && (
