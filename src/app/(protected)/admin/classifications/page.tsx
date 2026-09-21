@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireRole } from "@/lib/auth/roles";
 import { prisma } from "@/lib/prisma";
 import {
@@ -9,6 +10,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid: "코드와 라벨을 모두 입력하세요.",
   invalid_domain: "분류 종류를 확인할 수 없습니다.",
   duplicate: "그 종류에 같은 코드가 이미 있습니다.",
+  not_found: "선택한 분류를 확인할 수 없습니다.",
+  duplicate_label: "같은 종류에 그 이름을 쓰는 분류가 이미 있습니다. 병합을 이용하세요.",
 };
 
 // 분류 관리 — 지역·전문영역/관심을 자유 텍스트 대신 정식 분류표에서 고르게
@@ -31,6 +34,11 @@ export default async function ClassificationsPage({
     <section>
       <h1 style={{ fontSize: 20 }}>분류 관리</h1>
       {error && ERROR_MESSAGES[error] && <p style={{ color: "#c0392b" }}>{ERROR_MESSAGES[error]}</p>}
+      <p style={{ marginBottom: 16 }}>
+        <Link href="/admin/classifications/merge" style={{ fontSize: 13, fontWeight: 600 }}>
+          분류 병합(중복 정리) →
+        </Link>
+      </p>
 
       <h2 style={{ fontSize: 16 }}>새 분류 등록</h2>
       <form method="POST" action="/api/admin/classifications/create" style={{ marginBottom: 24 }}>
@@ -85,31 +93,44 @@ export default async function ClassificationsPage({
             ) : (
               <ul style={{ listStyle: "none", padding: 0 }}>
                 {items.map((item) => (
-                  <li
-                    key={item.id}
-                    style={{
-                      borderBottom: "1px solid #e0e0e0",
-                      padding: "10px 0",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                  >
-                    <div>
-                      <strong>{item.label}</strong>{" "}
-                      <span style={{ fontSize: 12, color: "#888888" }}>{item.code}</span>
-                      {!item.active && (
-                        <span style={{ fontSize: 12, color: "#888888" }}> — 사용 중지됨</span>
-                      )}
+                  <li key={item.id} style={{ borderBottom: "1px solid #e0e0e0", padding: "10px 0" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div>
+                        <strong>{item.label}</strong>{" "}
+                        <span style={{ fontSize: 12, color: "#888888" }}>{item.code}</span>
+                        {!item.active && (
+                          <span style={{ fontSize: 12, color: "#888888" }}> — 사용 중지됨</span>
+                        )}
+                      </div>
+                      <form
+                        method="POST"
+                        action={`/api/admin/classifications/${item.id}/${item.active ? "deactivate" : "activate"}`}
+                      >
+                        <button type="submit" style={{ fontSize: 13, padding: "4px 10px" }}>
+                          {item.active ? "사용 중지" : "다시 사용"}
+                        </button>
+                      </form>
                     </div>
-                    <form
-                      method="POST"
-                      action={`/api/admin/classifications/${item.id}/${item.active ? "deactivate" : "activate"}`}
-                    >
-                      <button type="submit" style={{ fontSize: 13, padding: "4px 10px" }}>
-                        {item.active ? "사용 중지" : "다시 사용"}
-                      </button>
-                    </form>
+                    <details style={{ marginTop: 6 }}>
+                      <summary style={{ fontSize: 12, color: "var(--color-text-muted)", cursor: "pointer" }}>
+                        이름 수정
+                      </summary>
+                      <form
+                        method="POST"
+                        action={`/api/admin/classifications/${item.id}/update`}
+                        style={{ display: "flex", gap: 8, marginTop: 8 }}
+                      >
+                        <input
+                          name="label"
+                          defaultValue={item.label}
+                          required
+                          style={{ padding: 8, fontSize: 14, flex: 1 }}
+                        />
+                        <button type="submit" style={{ fontSize: 13, padding: "4px 10px" }}>
+                          저장
+                        </button>
+                      </form>
+                    </details>
                   </li>
                 ))}
               </ul>

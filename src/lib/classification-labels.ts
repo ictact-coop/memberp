@@ -1,3 +1,5 @@
+import type { Prisma } from "@prisma/client";
+
 // 지역·전문영역 분류 체계. `Classification`은 (domain, code, label) 조회표로
 // R1 스키마 설계 때부터 있었지만 아무 화면도 쓰지 않았다(활동 서비스 분류 등
 // 다른 domain은 이번 범위 밖 — 필요해지면 이 배열에 추가하면 된다). 지금은
@@ -21,6 +23,41 @@ export function isClassificationDomain(value: string): value is ClassificationDo
 // 않다.
 export function normalizeClassificationCode(raw: string): string {
   return raw.trim().toUpperCase().replace(/\s+/g, "_");
+}
+
+// 지역·전문영역 라벨을 고치거나 두 항목을 합칠 때, 그 라벨을 이미 값으로 갖고
+// 있는 Subject.region/expertiseTags까지 함께 옮긴다. 이 두 필드는 Classification.id가
+// 아니라 label 문자열을 그대로 복사해 저장하므로("controlled-vocabulary +
+// 레거시 자유 텍스트" 설계 — 위 isAllowedControlledValue 참고), FK 기반
+// 병합(src/lib/subject-merge.ts)과 달리 값 일치로 찾아 바꿔야 한다.
+export async function relabelSubjectsForClassification(
+  tx: Prisma.TransactionClient,
+  domain: ClassificationDomain,
+  oldLabel: string,
+  newLabel: string,
+): Promise<number> {
+  if (oldLabel === newLabel) return 0;
+
+  if (domain === "REGION") {
+    const result = await tx.subject.updateMany({
+      where: { region: oldLabel },
+      data: { region: newLabel },
+    });
+    return result.count;
+  }
+
+  // EXPERTISE는 배열 필드라 updateMany로 원소 하나만 바꿀 수 없어 건별로 고친다.
+  const subjects = await tx.subject.findMany({
+    where: { expertiseTags: { has: oldLabel } },
+    select: { id: true, expertiseTags: true },
+  });
+  for (const subject of subjects) {
+    const nextTags = Array.from(
+      new Set(subject.expertiseTags.map((tag) => (tag === oldLabel ? newLabel : tag))),
+    );
+    await tx.subject.update({ where: { id: subject.id }, data: { expertiseTags: nextTags } });
+  }
+  return subjects.length;
 }
 
 // 지역·전문영역처럼 "정식 분류표 + 이미 저장된 자유 텍스트"가 함께 있는 필드를

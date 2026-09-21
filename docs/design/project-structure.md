@@ -48,7 +48,8 @@ src/
         org-units/page.tsx    기구 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 기구 등록·목록·보관·복원
         org-units/[id]/edit/page.tsx  기구 정보 수정 — 등록과 같은 필드
         org-units/merge/page.tsx  기구 병합 — 선택 → 미리보기(개수 조회) → 확정 2단계
-        classifications/page.tsx  분류 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 지역·전문영역 분류 등록·사용 중지
+        classifications/page.tsx  분류 관리(SECRETARIAT/SYSTEM_ADMIN 전용) — 지역·전문영역 분류 등록·사용 중지·이름 수정
+        classifications/merge/page.tsx  분류 병합 — 종류 선택 → 미리보기(건수 조회) → 확정 2단계
         audit-log/page.tsx    상태 이력 조회(SECRETARIAT/SYSTEM_ADMIN 전용) — AuditLog 조회·필터
       forbidden/page.tsx    로그인은 됐지만 역할·담당 범위가 안 맞을 때
     api/
@@ -114,6 +115,8 @@ src/
           create/route.ts            POST: 지역·전문영역 분류 등록(코드 정규화, 중복 거부)
           [id]/deactivate/route.ts   POST: 분류 사용 중지(active=false, 삭제 아님)
           [id]/activate/route.ts     POST: 분류 다시 사용(active=true)
+          [id]/update/route.ts       POST: 분류 이름 수정(라벨 문자열을 쓰던 Subject 필드까지 함께 이전)
+          merge/route.ts             POST: 분류 병합(참조 이전 후 source 사용 중지)
   components/
     AppHeader.tsx        브랜드 로고(라임 배지 "IT" + 워드마크) — 모든 화면 상단에 고정
     BottomNav.tsx        모바일 기본 메뉴 (v0.2 §2.1): 홈/참여할 일/기록하기/우리 조합/내 정보
@@ -135,7 +138,8 @@ src/
     audit-labels.ts      AuditAction 한글 라벨, beforeData/afterData 변경분만 뽑는 diffAuditData
     assignment-labels.ts AssignmentStatus 한글 라벨, 역할 선택지, 재신청 가능 상태 목록
     classification-labels.ts 지역·전문영역 분류 도메인·한글 라벨, 코드 정규화,
-                          레거시 자유 텍스트를 잃지 않는 선택형 검증(isAllowedControlledValue)
+                          레거시 자유 텍스트를 잃지 않는 선택형 검증(isAllowedControlledValue),
+                          라벨 변경 시 Subject.region/expertiseTags 이전(relabelSubjectsForClassification)
     notification-labels.ts NotificationType 한글 라벨
     notifications.ts     알림 생성 헬퍼(notify) — FR-10, 큐 없이 트랜잭션 안에서 즉시 생성
     auth/
@@ -832,9 +836,9 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있고, `/api/admin/org-units/create`
   빠지고, 다시 사용으로 켜면 즉시 돌아온다.
 - **저장 방식은 참조가 아니라 문자열 복사**: 지역·전문영역 필드(`Subject.region`,
   `expertiseTags`)는 `Classification`을 외래키로 가리키지 않고, 고른 항목의
-  `label` 문자열을 그대로 저장한다. 이 화면에서 라벨 자체를 고치는 기능은 없지만,
-  만약 생기더라도 이미 저장된 값에는 소급 적용되지 않는다는 뜻이다 — 스키마
-  마이그레이션 없이 넣을 수 있는 가장 단순한 형태를 택한 것이다.
+  `label` 문자열을 그대로 저장한다 — 스키마 마이그레이션 없이 넣을 수 있는
+  가장 단순한 형태를 택한 것이다. 그 대신 라벨을 고치거나 병합할 때는 이미
+  저장된 문자열까지 함께 옮겨야 한다("이름 수정"·"분류 병합" 항목 참고).
 - **레거시 자유 텍스트를 잃지 않는다**: 이 기능 이전에 자유 텍스트로 저장된
   지역·전문영역 값(또는 나중에 분류를 사용 중지한 뒤에도 남아 있는 값)은 활성
   분류표에 없어도 그 항목의 수정 화면에서 "(목록에 없음)"이라고 표시된 채 계속
@@ -843,6 +847,27 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있고, `/api/admin/org-units/create`
   값이면 허용"). 수정 화면 자체가 없는 새 등록(기구 등록)에는 이 예외가 없다 —
   처음부터 활성 분류표 값만 허용한다. 화면과 API 양쪽에서 같은 규칙을 다시
   검증한다(직접 API를 호출해 목록에 없는 값을 새로 끼워 넣는 것을 막기 위해서).
+- **이름 수정(오타 정정)**: 각 항목의 "이름 수정"을 펼치면(`<details>`, JS 없이
+  동작) 라벨만 바꾸는 작은 폼이 나온다. 코드·종류는 그대로 두고 라벨만 바꾸되,
+  이미 그 라벨을 쓰고 있는 `Subject.region`/`expertiseTags`도 같은 트랜잭션
+  안에서 새 라벨로 함께 바꾼다(`relabelSubjectsForClassification` —
+  `expertiseTags`는 배열이라 `updateMany`로 원소 하나만 못 바꿔 건별로 고친다).
+  그 종류에 이미 같은 이름이 있으면 `error=duplicate_label`로 거부하고 병합을
+  쓰라고 안내한다. `AuditLog`(entityType `"Classification"`, action `UPDATE`)에
+  전·후 라벨과 영향받은 사람·기구 수를 남긴다.
+- **분류 병합 화면(`/admin/classifications/merge`)**: 같은 종류(도메인) 안에서
+  중복 등록된 두 항목을 하나로 합친다 — 이름 수정과 같은 문자열 이전
+  (`relabelSubjectsForClassification`)에 더해, `ActivityClassification.
+  classificationId`(진짜 외래키)도 target으로 옮긴다. 같은 활동이 source·target
+  둘 다에 이미 연결돼 있으면(중복 태깅) 유일 제약 `(activityId,
+  classificationId)`에 걸리므로, 그 경우는 source 쪽 연결을 지우고 target
+  연결만 남긴다. source는 지우지 않고 이미 있던 "사용 중지"(`active=false`)로
+  물러나게 한다 — 별도 필드를 추가하지 않고 기존 개념을 재사용했다. target은
+  반드시 사용 중인 분류여야 하지만, source는 이미 사용 중지된 분류(예전에
+  개별적으로 꺼둔 오타 항목)를 나중에 정식으로 합치는 것도 허용한다. 흐름은
+  기구·사람 병합과 같은 선택→미리보기(사람·기구 건수, 활동 건수)→확정 2단계.
+- **정직하게 남겨둔 것**: 병합할 후보를 자동으로 찾아 추천하는 기능은 없다 —
+  라벨이 비슷한 항목이 있는지는 관리자가 직접 살펴봐야 한다.
 
 ### 기구 병합 화면 (`/admin/org-units/merge`)
 
@@ -1169,10 +1194,9 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있다(`/admin`의 다른 화면과 �
   (`/needs/[needId]/edit`). 다만 종결 후 "새 요청은 원본을 참조하는 새 필요로
   만든다"(v0.1)는 요구는 원본 참조 필드가 스키마에 없어 여전히 구현하지 않았다 —
   지금은 완전히 새로운 상담으로 접수해야 한다.
-- **분류 도메인 확장·병합**: 지역·전문영역 두 도메인만 있다 — 활동 서비스 분류
-  같은 다른 도메인(`ActivityClassification`이 이미 참조를 예정해둔)은 아직 화면이
-  없다. 분류 라벨을 고치거나 두 분류를 하나로 합치는 기능도 없다(사용 중지만
-  가능).
+- **분류 도메인 확장**: 지역·전문영역 두 도메인만 있다 — 활동 서비스 분류 같은
+  다른 도메인(`ActivityClassification`이 이미 참조를 예정해둔)은 아직 화면이
+  없다(라벨 수정·병합은 이제 있다 — "분류 관리·병합 화면" 참고).
 - **첨부파일의 실제 객체 스토리지 이전**: ADR-0004가 명시한 대로, 지금은 로컬
   디스크 임시 저장이다 — 조합이 S3/MinIO 등을 정하면 `attachment-storage.ts`만
   바꿔 이전해야 한다(활동·상담·수요·기여 네 entityType 모두 이 파일 하나를 통해
@@ -1593,3 +1617,19 @@ npm run dev                  # http://localhost:3000
     선택지에서 즉시 사라짐을 확인. 같은 코드를 공유하도록 리팩터링한
     기구 병합 화면도 권한 부여(PermissionGrant) 참조 이전과 source 보관까지
     회귀 없이 그대로 동작함을 재확인
+  - 분류 이름 수정·병합(`/admin/classifications`, `.../merge`): 역할 없는
+    계정은 병합 화면 접근과 두 API(`.../update`, `.../merge`) 직접 호출 모두
+    `/forbidden`으로 차단됨을 확인; 지역 분류 라벨을 실제로 고치면 그 라벨을
+    쓰던 `Subject.region`도 함께 새 라벨로 바뀌고 `AuditLog`(action `UPDATE`)에
+    전·후 라벨과 영향받은 건수가 남음을 확인; 같은 종류에 이미 있는 이름으로
+    고치려 하면 `error=duplicate_label`로 거부되고 원래 라벨이 그대로 유지됨을
+    확인; 지역 분류 두 건("부산"→"부산광역시") 병합 시 그 라벨을 쓰던 사람의
+    지역이 실제로 바뀌고, 그 분류가 붙은 두 활동 중 target에만 이미 연결돼
+    있던 활동은 중복 연결 없이 하나로 합쳐지고(유일 제약 위반 없음) 나머지
+    활동은 정상적으로 target으로 재연결됨을 확인; 전문영역(배열 필드) 병합
+    시 태그 하나만 가진 사람과 신구 라벨을 동시에 가진 사람 모두 정확히
+    처리됨(후자는 중복 제거되어 하나만 남음)을 확인; 병합 후 source는
+    삭제되지 않고 사용 중지되며 `AuditLog`(action `ARCHIVE`)에
+    `mergedIntoClassificationId`가 남음을 확인; 서로 다른 종류끼리 합치기·
+    같은 항목 선택·사용 중지된 항목을 합칠 대상으로 선택 각각
+    `domain_mismatch`/`same_classification`/`target_inactive`로 거부됨을 확인
