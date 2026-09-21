@@ -29,6 +29,7 @@ export async function POST(request: Request) {
   const visibilityRaw = formData.get("visibility");
   const budgetMinRaw = formData.get("budgetMin");
   const budgetMaxRaw = formData.get("budgetMax");
+  const followsUpOnNeedIdRaw = formData.get("followsUpOnNeedId");
 
   const isValidChannel =
     typeof channelRaw === "string" && (Object.values(NeedChannel) as string[]).includes(channelRaw);
@@ -70,6 +71,18 @@ export async function POST(request: Request) {
     return NextResponse.redirect(new URL("/needs/new?error=invalid_budget", request.url));
   }
 
+  // v0.1 §3.1: "종결 후 새 요청은 원본을 참조하는 새 필요로 만든다" — 종결(CLOSED)된
+  // 상담·수요만 후속의 원본이 될 수 있다. 사업화(CONVERTED)는 완료가 아니라 실행으로
+  // 넘어간 상태라 후속의 대상이 아니다(같은 문서).
+  let followsUpOnNeedId: string | null = null;
+  if (typeof followsUpOnNeedIdRaw === "string" && followsUpOnNeedIdRaw) {
+    const origin = await prisma.need.findUnique({ where: { id: followsUpOnNeedIdRaw } });
+    if (!origin || origin.status !== "CLOSED") {
+      return NextResponse.redirect(new URL("/needs/new?error=invalid_follow_up", request.url));
+    }
+    followsUpOnNeedId = origin.id;
+  }
+
   const need = await prisma.$transaction(async (tx) => {
     const displayId = await nextDisplayId(tx, "NEED");
     const created = await tx.need.create({
@@ -86,6 +99,7 @@ export async function POST(request: Request) {
         budgetMin,
         budgetMax,
         visibility,
+        followsUpOnNeedId,
         status: "RECEIVED",
         createdBy: active.account.id,
       },

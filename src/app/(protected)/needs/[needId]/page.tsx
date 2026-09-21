@@ -3,6 +3,7 @@ import Link from "next/link";
 import { NeedCloseType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireActiveSession } from "@/lib/auth/session";
+import { ACTIVITY_OPERATIONS_ROLES, hasAnyRole } from "@/lib/auth/roles";
 import {
   NEED_CHANNEL_LABELS,
   NEED_CLOSE_TYPE_LABELS,
@@ -50,6 +51,8 @@ export default async function NeedDetailPage({
       beneficiarySubject: { select: { name: true } },
       activityLinks: { include: { activity: { select: { displayId: true, title: true } } } },
       _count: { select: { contributions: true } },
+      followsUpOn: { select: { id: true, displayId: true, title: true } },
+      followUps: { select: { id: true, displayId: true, title: true, status: true } },
     },
   });
   if (!need) {
@@ -57,6 +60,7 @@ export default async function NeedDetailPage({
   }
 
   const isAssignee = need.assigneeAccountId === active.account.id;
+  const canCreateNeeds = await hasAnyRole(active.account.id, ACTIVITY_OPERATIONS_ROLES);
   const actions = availableNeedTransitions(need.status);
 
   const [activities, subjects] = await Promise.all([
@@ -91,6 +95,22 @@ export default async function NeedDetailPage({
     <section>
       <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{need.displayId}</p>
       <h1 style={{ fontSize: 20, marginBottom: 8 }}>{need.title}</h1>
+      {need.followsUpOn && (
+        <p className="notice-banner">
+          이 상담·수요는{" "}
+          <Link href={`/needs/${need.followsUpOn.id}`}>
+            {need.followsUpOn.displayId} · {need.followsUpOn.title}
+          </Link>
+          의 후속입니다.
+        </p>
+      )}
+      {canCreateNeeds && need.status === "CLOSED" && (
+        <p>
+          <Link href={`/needs/new?followsUpOnNeedId=${need.id}`} style={{ fontSize: 13, fontWeight: 600 }}>
+            후속 상담·수요 만들기 →
+          </Link>
+        </p>
+      )}
       {isAssignee && need.status !== "CLOSED" && need.status !== "CONVERTED" && (
         <p>
           <Link href={`/needs/${need.id}/edit`} style={{ fontSize: 13, fontWeight: 600 }}>
@@ -195,6 +215,24 @@ export default async function NeedDetailPage({
                 <Link href={`/activities/${link.activityId}`} style={{ fontWeight: 600 }}>
                   {link.activity.displayId} · {link.activity.title}
                 </Link>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      {need.followUps.length > 0 && (
+        <>
+          <h2 style={{ fontSize: 16, marginTop: 24 }}>후속 상담·수요</h2>
+          <ul className="card-list">
+            {need.followUps.map((followUp) => (
+              <li key={followUp.id} className="card" style={{ padding: 12 }}>
+                <Link href={`/needs/${followUp.id}`} style={{ fontWeight: 600 }}>
+                  {followUp.displayId} · {followUp.title}
+                </Link>{" "}
+                <span className={`badge ${NEED_STATUS_BADGE_TONE[followUp.status]}`}>
+                  {NEED_STATUS_LABELS[followUp.status]}
+                </span>
               </li>
             ))}
           </ul>
