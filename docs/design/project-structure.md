@@ -1096,6 +1096,13 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있다(`/admin`의 다른 화면과 �
   `runner`(Next.js `output: "standalone"` 결과만 담은 최소 런타임 이미지).
   `next.config.mjs`에 `output: "standalone"`을 이번에 추가했다 — 안 하면
   `.next/standalone`이 아예 생기지 않아 `runner` 스테이지가 복사할 파일이 없다.
+  (처음 작성했을 때는 흔한 Next.js 관례를 그대로 따라 `runner` 스테이지에
+  `COPY --from=builder /app/public ./public`도 넣었는데, 이 저장소에는
+  `public/` 디렉터리 자체가 없어서(정적 자산 없음 — 폰트는 CDN 링크) 빌드가
+  실패했다. 이 샌드박스는 Docker Hub 접근이 막혀 있어 그때는 실제로 빌드해
+  잡아낼 수 없었던 버그였는데, "CI (GitHub Actions)" 절의 `docker` 잡이
+  PR에서 처음 돌자마자 바로 이 오류로 잡아냈다 — CI를 왜 만들었는지 보여주는
+  사례라 여기 남겨둔다. `public/` COPY 줄은 지웠다.)
 - **왜 런타임 이미지에 Prisma CLI를 넣지 않았는가**: `runner`는 `next start`가
   아니라 standalone 출력의 `server.js`만 실행한다. 마이그레이션은 별도
   `migrate` 서비스가 `builder` 이미지(전체 `node_modules`+`prisma/` 포함)로

@@ -26,7 +26,9 @@ RUN groupadd --system --gid 1001 nodejs \
   && mkdir -p /app/storage/attachments \
   && chown -R nextjs:nodejs /app/storage
 
-COPY --from=builder /app/public ./public
+# 이 프로젝트에는 public/ 디렉터리가 없다(정적 자산 없음 — 폰트는 CDN 링크,
+# 유일한 <img>도 서버가 만든 data URL이다) — 있지도 않은 경로를 COPY하면 빌드
+# 자체가 실패한다.
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
