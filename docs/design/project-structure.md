@@ -1135,6 +1135,48 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있다(`/admin`의 다른 화면과 �
   `migrate`→`app` 순서 의존성·헬스체크 동작은 실제 조합 서버나 네트워크
   제약이 없는 환경에서 최초 실행 시 확인이 필요하다.
 
+## CI (GitHub Actions, `.github/workflows/ci.yml`)
+
+push(main)·PR마다 두 잡을 돌린다. `docker` 잡은 바로 위 "정직하게 남겨둔
+것"이 말한 한계 — 이 개발 샌드박스는 네트워크 정책상 Docker Hub 이미지를
+받을 수 없어 `docker compose up --build`를 끝까지 실행해 본 적이 없다는
+것 — 을 실제로 메운다. GitHub 호스팅 러너는 이 샌드박스와 달리 완전한
+인터넷 접근이 있어, CI가 이 저장소의 Dockerfile·docker-compose.yml을
+실제로 빌드·기동해 보는 첫 번째 곳이 된다.
+
+- **`app` 잡 — 빌드·린트·마이그레이션 검증**: `postgres:16` 서비스 컨테이너를
+  띄운 완전히 빈 DB에 `npx prisma migrate deploy`로 이 저장소의 마이그레이션
+  **전체**를 처음부터 순서대로 적용한다. 이게 중요한 이유: 이 세션의 여러
+  마이그레이션은 샌드박스에서 `prisma migrate dev`가 비대화형 환경을 지원하지
+  않아 매번 `prisma migrate diff`로 SQL을 뽑아 손으로 파일을 만들어 넣은
+  것들이다 —
+  손으로 쓴 SQL이 실제로 순서대로 다 적용되는지, 이 세션의 개발 DB(계속
+  누적되어 온 하나의 DB)에서는 검증된 적이 있어도 "완전히 새로운 DB"
+  기준으로는 CI가 처음 확인해 준다. 이어서 `prisma migrate status`로 스키마와
+  마이그레이션 이력이 어긋나지 않는지, `eslint`·`next build`(TypeScript
+  타입체크 포함)까지 확인한다.
+- **`docker` 잡 — Docker Compose 실제 기동**: `app` 잡이 통과해야 시작한다
+  (린트·빌드부터 깨진 채로 무거운 Docker 빌드를 돌리지 않기 위해). `.env.example`을
+  복사하고 `TOTP_ENCRYPTION_KEY`만 실제 값으로 채운 뒤 `docker compose up
+  -d --build`로 `db`→`migrate`→`app` 전체를 띄우고, `/api/health`가
+  `{"status":"ok"}`를 반환할 때까지 최대 60초 기다린다. 실패하면
+  `docker compose logs`를 출력해 어느 서비스가 왜 안 됐는지 바로 보이게
+  하고, 성공하든 실패하든 `docker compose down -v`로 정리한다.
+- **로컬에서 대신 확인한 것**: 이 세션에서는 여전히 실제 `docker compose up`을
+  실행해 볼 수 없었지만(같은 네트워크 제약), `app` 잡이 하는 것과 똑같은
+  검증 — 완전히 새 Postgres 데이터베이스를 만들어 `prisma migrate deploy`를
+  처음부터 실행 — 은 로컬에서 실행해 7개 마이그레이션이 모두 깨끗하게
+  적용됨을 확인했고, `prisma migrate diff`로 그 결과가 현재
+  `prisma/schema.prisma`와 한 글자도 다르지 않음(빈 diff)을 확인했다.
+  `npm ci`(락파일 그대로 설치)·`eslint`·`next build`도 다시 실행해 통과함을
+  확인했다.
+- **정직하게 남겨둔 것**: 이미지를 레지스트리에 올리거나 실제 서버에 배포하는
+  단계는 없다 — CI는 "빌드가 되는가·뜨는가"만 검증하고 멈춘다("아직 없는 것"의
+  "Docker 이미지 레지스트리 배포" 참고). 이 워크플로 자체를 GitHub Actions
+  러너에서 실제로 실행해 보는 것(`act` 같은 로컬 러너가 이 샌드박스에 없다)도
+  이 세션에서는 못했다 — 문법은 YAML 파서로 직접 검증했고, 각 스텝이 하는
+  일은 로컬에서 동일하게 재현해 확인했다.
+
 ## 데이터 백업·내보내기 (`/admin/backup`, `/my/profile`, 병행운영전략 v0.2 구현)
 
 병행운영전략 v0.2가 "v0.1 참여 시범" 범위로 명시한 항목(140행) 중 "내보내기·백업"이
@@ -1206,10 +1248,11 @@ SECRETARIAT·SYSTEM_ADMIN만 들어올 수 있다(`/admin`의 다른 화면과 �
   지금은 이메일도 요청 안에서 동기로 바로 보낸다(ADR-0003). Redis를 새 필수
   의존성으로 들이는 결정이라 실제 필요(재시도 실패가 잦아진다거나, 대량
   발송이 요청을 느리게 만든다거나)가 확인되기 전에는 미룬다.
-- **Docker 이미지 레지스트리 배포·CI**: Docker Compose로 로컬/단일 서버 실행은
-  이제 있다("Docker Compose 배포 설정" 참고). 이미지를 레지스트리에 올리고
-  여러 대에 배포하는 절차, GitHub Actions 등에서 빌드를 검증하는 CI는 아직
-  없다.
+- **Docker 이미지 레지스트리 배포**: GitHub Actions CI는 이제 있다(아래 "CI
+  (GitHub Actions)" 참고). 다만 이미지를 레지스트리(Docker Hub 등)에 올리고
+  실제 서버 여러 대에 배포하는 절차는 없다 — 어느 레지스트리·어느 서버를 쓸지
+  조합이 아직 정하지 않았고, 그 결정 없이 배포 자동화부터 만드는 것은
+  ADR-0001이 경계하는 "확정되지 않은 요구사항을 먼저 만드는" 일이라 미룬다.
 - **백업 가져오기(복원), 첨부파일 실제 바이트 포함**: 데이터 내보내기(`/admin/
   backup`, "데이터 백업·내보내기" 참고)는 있지만, 내보낸 JSON을 다시 읽어 새
   DB로 복원하는 가져오기 기능은 없다 — 지금은 단방향 내보내기만 된다. 첨부파일도
@@ -1633,3 +1676,15 @@ npm run dev                  # http://localhost:3000
     `mergedIntoClassificationId`가 남음을 확인; 서로 다른 종류끼리 합치기·
     같은 항목 선택·사용 중지된 항목을 합칠 대상으로 선택 각각
     `domain_mismatch`/`same_classification`/`target_inactive`로 거부됨을 확인
+  - CI(`.github/workflows/ci.yml`): 완전히 새로 만든 PostgreSQL 데이터베이스에
+    이 저장소의 마이그레이션 7개를 처음부터 순서대로 적용하면 전부 성공하고,
+    `prisma migrate diff`로 그 결과가 현재 `prisma/schema.prisma`와 한 글자도
+    다르지 않음(빈 diff)을 확인 — `app` 잡의 핵심 단계를 그대로 재현한 것.
+    `npm ci`(락파일 그대로 설치) 후 `eslint`·`next build`도 다시 통과함을
+    확인. 워크플로 YAML은 `yaml.safe_load`로 직접 파싱해 문법 오류가 없고
+    `on:` 키가 (YAML의 유명한 함정대로) 불리언 `true`로 잘못 해석되지 않고
+    문자열 키로 남아 있음을 확인(처음 작성했을 때 실제로 이 문제가 있어
+    `"on":`으로 고쳤다). `docker` 잡이 실제로 GitHub Actions 러너에서
+    성공하는지는 이 세션에서 확인하지 못했다 — 이 샌드박스는 Docker Hub
+    이미지 접근이 막혀 있고(Docker Compose 배포 설정 절 참고), `act` 같은
+    로컬 GitHub Actions 러너도 설치돼 있지 않다

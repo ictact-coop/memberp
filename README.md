@@ -1,4 +1,7 @@
 # memberp
+
+![CI](https://github.com/ictact-coop/memberp/actions/workflows/ci.yml/badge.svg)
+
 공동체IT 조합원들이 참여하는 ERP
 
 ## 문서
@@ -41,3 +44,12 @@ docker compose run --rm migrate npx tsx prisma/bootstrap-admin.ts you@example.or
 
 `docker compose down`은 컨테이너만 지우고 볼륨(db-data, attachments)은 남긴다.
 데이터까지 지우려면 `docker compose down -v`.
+
+## CI
+
+`main` 푸시·모든 PR마다 `.github/workflows/ci.yml`이 두 단계로 확인한다:
+
+1. 빈 PostgreSQL에 마이그레이션 전체 적용 → 스키마 어긋남 확인 → lint → build
+2. Docker Compose로 실제 빌드·기동 → `/api/health`가 정상 응답할 때까지 대기
+
+둘 다 통과해야 초록 배지가 뜬다.

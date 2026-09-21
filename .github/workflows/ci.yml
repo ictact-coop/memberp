@@ -1,0 +1,95 @@
+name: CI
+
+"on":
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  app:
+    name: 빌드·린트·마이그레이션 검증
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: memberp
+          POSTGRES_PASSWORD: memberp
+          POSTGRES_DB: memberp
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U memberp -d memberp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://memberp:memberp@localhost:5432/memberp?schema=public
+      APP_BASE_URL: http://localhost:3000
+      TOTP_ENCRYPTION_KEY: fR06UrZkQgd2AbGKkxOZJ0idHRWhpHISn7IhI1nM3fI=
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: 의존성 설치
+        run: npm ci
+
+      - name: Prisma client 생성
+        run: npx prisma generate
+
+      # 이 저장소의 마이그레이션 중 상당수는 샌드박스에서 `prisma migrate dev`가
+      # 비대화형 환경을 지원하지 않아 손으로 SQL을 작성해 넣었다. 빈 DB에
+      # 순서대로 다 적용되는지를 매 push마다 확인해 손으로 쓴 SQL이 어긋나지
+      # 않았는지 검증한다.
+      - name: 마이그레이션 적용 (빈 DB에서 처음부터)
+        run: npx prisma migrate deploy
+
+      - name: 스키마와 마이그레이션 이력이 어긋나지 않았는지 확인
+        run: npx prisma migrate status
+
+      - name: ESLint
+        run: npx eslint .
+
+      - name: Next.js 빌드 (타입체크 포함)
+        run: npx next build
+
+  docker:
+    name: Docker Compose 빌드·기동 검증
+    runs-on: ubuntu-latest
+    needs: app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: .env 준비 (compose가 ${VAR} 치환에 쓴다)
+        run: |
+          cp .env.example .env
+          KEY=$(openssl rand -base64 32)
+          sed -i "s|^TOTP_ENCRYPTION_KEY=.*|TOTP_ENCRYPTION_KEY=\"${KEY}\"|" .env
+
+      - name: 빌드 + 기동 (db → migrate → app)
+        run: docker compose up -d --build
+
+      - name: 헬스체크 대기 (/api/health가 ok를 반환할 때까지)
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/api/health | grep -q '"status":"ok"'; then
+              echo "헬스체크 통과"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "제한 시간 안에 헬스체크를 통과하지 못했습니다" >&2
+          docker compose logs
+          exit 1
+
+      - name: 로그 출력 (실패 시 진단용)
+        if: failure()
+        run: docker compose logs
+
+      - name: 정리
+        if: always()
+        run: docker compose down -v
