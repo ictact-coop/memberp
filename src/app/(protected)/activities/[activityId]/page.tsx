@@ -109,6 +109,13 @@ export default async function ActivityDetailPage({
           의 정정본입니다.
         </p>
       )}
+      {(supersededBy || activity.revisionOf) && (
+        <p style={{ marginBottom: 16 }}>
+          <Link href={`/activities/${activity.id}/lineage`} style={{ fontSize: 13, fontWeight: 600 }}>
+            정정 계보 전체 보기 →
+          </Link>
+        </p>
+      )}
 
       <div className="card">
         <span className={`badge ${ACTIVITY_STATUS_BADGE_TONE[activity.status]}`}>
