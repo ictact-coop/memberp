@@ -8,6 +8,7 @@ export const AUDIT_ACTION_LABELS: Record<AuditAction, string> = {
   CONFIRM: "확인",
   ARCHIVE: "보관",
   EXPORT: "내보내기",
+  IMPORT: "복원",
 };
 
 // beforeData/afterData(JSON) 중 실제로 값이 달라진 키만 뽑아 "무엇이 바뀌었는지"를
