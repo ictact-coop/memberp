@@ -484,6 +484,49 @@ v0.1 §3.2의 활동 상태표를 그대로 코드화했다: 기획→승인대�
   경우(`revisionOf` 또는 `revisions`가 있는 경우)에만 "정정 계보 전체 보기"
   링크가 나타난다.
 
+## 활동 서비스 분류 태깅 (`ActivityClassification`, "분류 관리 화면" 확장)
+
+`Classification`(분류표)·`ActivityClassification`(활동 ↔ 분류 N:M)은 R1 스키마
+설계 때부터 있었지만, 실제로 도메인을 등록하고 활동에 붙이는 화면이 없었다
+("아직 없는 것"에 있던 "분류 도메인 확장"). 지역·전문영역만 쓰던
+`CLASSIFICATION_DOMAINS`(`src/lib/classification-labels.ts`)에 `ACTIVITY_SERVICE`를
+추가해 기존 "분류 관리" 화면(`/admin/classifications`)에서 등록·이름 수정·
+병합·사용 중지가 도메인 목록을 순회하는 방식이라 그대로 그 화면에 새 절로
+나타난다 — 새 화면을 만들 필요가 없었다. 태깅 자체만 활동 상세 화면
+(`/activities/[activityId]`)에 새로 추가했다.
+
+- **REGION/EXPERTISE와 달리 라벨을 복사해 두지 않는다**: `ActivityClassification`은
+  `classificationId`라는 진짜 외래키로만 연결된다(REGION/EXPERTISE가
+  `Subject.region`/`expertiseTags`에 라벨 문자열 자체를 복사해 두는 것과 다르다).
+  그래서 라벨을 고치거나 두 분류를 병합해도 `relabelSubjectsForClassification`
+  (Subject 쪽을 찾아 바꾸는 함수)을 실행할 필요가 전혀 없다.
+- **찾은 뒤 고친 실제 버그**: 기존 `isClassificationDomain()`을 그대로 재사용해
+  "이 domain이면 relabelSubjectsForClassification 실행"으로 분기하던 코드가
+  있었는데, ACTIVITY_SERVICE를 그 목록에 추가하는 순간 이 분기가 true가 되어
+  아무 의미 없이 `Subject.expertiseTags`를 뒤지는 조용한 버그가 될 뻔했다(실제
+  피해는 없었을 것 — 그 라벨을 가진 expertiseTags가 있을 리 없어 0건만
+  나왔겠지만, 의미상 틀린 코드였다). `SUBJECT_LABEL_DOMAINS = ["REGION",
+  "EXPERTISE"]`라는 별도의 좁은 타입과 `isSubjectLabelDomain()`을 새로 만들어
+  `relabelSubjectsForClassification`의 인자 타입 자체를 그걸로 좁혔다 — 나중에
+  또 다른 domain을 추가할 때 이 재라벨링이 필요한지 깜빡해도, 필요 없는
+  domain은 타입이 애초에 막아준다.
+- **활동 상세 화면에 태그 편집을 넣었다**: 새 API
+  `POST /api/activities/[activityId]/classify`가 체크박스로 제출된 전체
+  집합을 한 번에 반영한다(하나씩 추가·삭제하는 API 여러 개보다 태그 편집에
+  자연스럽다) — 선택 해제된 것은 지우고 새로 선택된 것만 추가한다. 권한·잠금
+  규칙은 활동 정보 수정과 같다: 그 활동의 책임자만, 종료·취소된 활동은 안 된다
+  (정정 이력 몫). 제출된 ID 중 실제로 존재하고 활성 상태인 ACTIVITY_SERVICE
+  분류만 인정하고, 다른 domain의 ID나 사용 중지된 분류를 새로 붙이려는 값은
+  조용히 무시한다.
+- **사용 중지된 분류도 이미 붙어 있으면 계속 보여준다**: 체크박스 목록은 활성
+  분류 전부 + 이미 이 활동에 붙어 있는데 그사이 사용 중지된 분류를 더해
+  만든다 — 안 그러면 체크박스에서 사라진 채로 다음 저장 때 조용히 태그가
+  떨어져 나간다(분류 관리 화면 자체의 "사용 중지 = 지우지 않고 새로 고를 수만
+  없게" 원칙과 같다).
+- 태그 목록(읽기 전용 배지)은 로그인한 누구에게나 보이고, 편집 폼만 책임자·
+  잠기지 않은 활동으로 좁힌다. 모든 변경은 `AuditLog`(`entityType:
+  "Activity", action: "UPDATE"`)에 태그 라벨 배열(전/후)로 남는다.
+
 ## 참여 신청·배치 흐름 (FR-05 구현)
 
 ```
@@ -1437,9 +1480,6 @@ push(main)·PR마다 두 잡을 돌린다. `docker` 잡은 바로 위 "정직하
 - **지급 확인**: '준비 승인'의 결재 권한자를 책임자와 분리하는 위임 규정은
   이제 있다("활동 결재 위임" 절 참고). 종료 시 v0.1이 요구하는 "열린 청구·지급
   확인"은 여전히 없다 — 계약·지급 테이블 자체가 R1 스키마에 없어서다.
-- **분류 도메인 확장**: 지역·전문영역 두 도메인만 있다 — 활동 서비스 분류 같은
-  다른 도메인(`ActivityClassification`이 이미 참조를 예정해둔)은 아직 화면이
-  없다(라벨 수정·병합은 이제 있다 — "분류 관리·병합 화면" 참고).
 - **첨부파일 실제 파일의 백업 이관**: S3/MinIO로 옮기는 코드 경로는 이제
   있다("첨부파일 저장소 — S3/MinIO 지원" 절 참고). 다만 지금까지 로컬 디스크에
   쌓인 기존 첨부파일들을 실제로 새 버킷에 옮겨주는 일회성 이관 스크립트는
@@ -1980,3 +2020,23 @@ npm run dev                  # http://localhost:3000
     경로를 아예 안 준 경우 모두 각각 적절한 오류 메시지로 거부되고 DB에는
     아무 변화도 없음을 확인. 검증에 쓴 두 임시 DB(memberp_restore_test,
     memberp_restore_test2)는 검증 후 삭제함
+  - 활동 서비스 분류 태깅: `/admin/classifications`에서 ACTIVITY_SERVICE
+    도메인으로 분류 3건을 등록하면 기존 "분류 관리" 화면에 새 절로 자동으로
+    나타남을 확인; 활동 책임자로 활동 상세 화면에 들어가면 체크박스 태깅
+    폼이 보이고, 두 개를 선택해 저장하면 `ActivityClassification`에 정확히
+    반영되고 배지로도 바로 보임을 확인; 하나만 남기고 저장하면 나머지 연결이
+    삭제됨을, 전부 해제하고 저장하면(실제 브라우저 폼처럼
+    `application/x-www-form-urlencoded`로, 필드를 아예 안 보낸 게 아니라)
+    전부 삭제됨을 확인; 그 활동의 책임자가 아닌 계정이 태깅을 시도하면
+    `error=forbidden`으로 거부되고 변화 없음을 확인; 활동을 CLOSED로 바꾸면
+    태깅 API가 `error=locked`로 거부하고, 상세 화면에서도 편집 폼이 사라지고
+    읽기 전용 배지만 남음을(정보 수정과 같은 잠금 규칙) 확인; 다른 domain
+    (REGION)의 분류 ID를 섞어 제출하면 조용히 무시되고 같은 domain의 유효한
+    선택만 반영됨을 확인; 이미 태깅된 분류를 사용 중지해도 상세 화면
+    체크박스 목록에 "(사용 중지됨)"과 함께 계속 나타나 해제할 수 있음을 확인;
+    ACTIVITY_SERVICE 분류의 라벨을 수정하면 `affectedSubjects: 0`으로 남아
+    (REGION/EXPERTISE와 달리) Subject 재라벨링이 전혀 실행되지 않음을 확인;
+    서로 다른 활동에 태깅된 두 ACTIVITY_SERVICE 분류를 병합하면
+    `ActivityClassification` 연결이 정확히 대상 분류로 옮겨지고 원본은 사용
+    중지됨을 확인. 검증용으로 만든 분류·태그·감사기록·세션은 모두 삭제하고
+    활동 상태는 원래대로 되돌림

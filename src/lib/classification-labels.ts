@@ -1,20 +1,33 @@
 import type { Prisma } from "@prisma/client";
 
-// 지역·전문영역 분류 체계. `Classification`은 (domain, code, label) 조회표로
-// R1 스키마 설계 때부터 있었지만 아무 화면도 쓰지 않았다(활동 서비스 분류 등
-// 다른 domain은 이번 범위 밖 — 필요해지면 이 배열에 추가하면 된다). 지금은
-// 내 정보·기구의 지역·전문영역/관심 두 필드만 자유 텍스트에서 이 표 기반
-// 선택형으로 옮긴다.
-export const CLASSIFICATION_DOMAINS = ["REGION", "EXPERTISE"] as const;
+// 지역·전문영역·활동 서비스 분류 체계. `Classification`은 (domain, code, label)
+// 조회표로 R1 스키마 설계 때부터 있었지만 처음엔 아무 화면도 쓰지 않았다.
+// ACTIVITY_SERVICE는 `ActivityClassification`(활동 ↔ 분류, 진짜 외래키 기반
+// N:M)이 이미 예정해 둔 도메인을 채운 것이다 — "분류 관리·병합" 화면 절 참고.
+export const CLASSIFICATION_DOMAINS = ["REGION", "EXPERTISE", "ACTIVITY_SERVICE"] as const;
 export type ClassificationDomain = (typeof CLASSIFICATION_DOMAINS)[number];
 
 export const CLASSIFICATION_DOMAIN_LABELS: Record<ClassificationDomain, string> = {
   REGION: "지역",
   EXPERTISE: "전문영역·관심",
+  ACTIVITY_SERVICE: "활동 서비스 분류",
 };
 
 export function isClassificationDomain(value: string): value is ClassificationDomain {
   return (CLASSIFICATION_DOMAINS as readonly string[]).includes(value);
+}
+
+// REGION·EXPERTISE만 Subject.region/expertiseTags에 라벨 문자열을 그대로 복사해
+// 저장한다(레거시 자유 텍스트와 공존시키는 설계, 아래 relabelSubjectsForClassification
+// 참고). ACTIVITY_SERVICE는 ActivityClassification.classificationId라는 진짜
+// 외래키로만 연결되어 라벨 문자열을 어디에도 복사해 두지 않으므로, 라벨을 바꾸거나
+// 병합해도 이 재라벨링이 전혀 필요 없다 — 두 그룹을 타입으로 갈라 뒀다(새 domain을
+// 추가할 때 여기 넣는 걸 깜빡해도 조용히 엉뚱한 필드를 뒤지는 대신 타입 에러가 난다).
+export const SUBJECT_LABEL_DOMAINS = ["REGION", "EXPERTISE"] as const;
+export type SubjectLabelDomain = (typeof SUBJECT_LABEL_DOMAINS)[number];
+
+export function isSubjectLabelDomain(value: string): value is SubjectLabelDomain {
+  return (SUBJECT_LABEL_DOMAINS as readonly string[]).includes(value);
 }
 
 // 코드는 사람이 타이핑한 값을 그대로 유일 제약(domain, code)에 넣지 않고
@@ -32,7 +45,7 @@ export function normalizeClassificationCode(raw: string): string {
 // 병합(src/lib/subject-merge.ts)과 달리 값 일치로 찾아 바꿔야 한다.
 export async function relabelSubjectsForClassification(
   tx: Prisma.TransactionClient,
-  domain: ClassificationDomain,
+  domain: SubjectLabelDomain,
   oldLabel: string,
   newLabel: string,
 ): Promise<number> {

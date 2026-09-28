@@ -2,15 +2,16 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveSession } from "@/lib/auth/session";
 import { hasAnyRole } from "@/lib/auth/roles";
-import { isClassificationDomain, relabelSubjectsForClassification } from "@/lib/classification-labels";
+import { isSubjectLabelDomain, relabelSubjectsForClassification } from "@/lib/classification-labels";
 
 const ADMIN_ROLES = ["SECRETARIAT", "SYSTEM_ADMIN"] as const;
 
 // 분류 라벨 수정(오타 정정 등) — 코드·종류는 그대로 두고 화면에 보일 이름만
-// 바꾼다. Subject.region/expertiseTags는 Classification.id가 아니라 label
-// 문자열을 그대로 복사해 저장하므로, 라벨을 바꾸면 이미 그 값을 쓰던 사람·
-// 기구도 함께 옮겨야 예전 라벨을 쓴 것들이 "목록에 없는 값"으로 밀려나지
-// 않는다(src/lib/classification-labels.ts의 relabelSubjectsForClassification).
+// 바꾼다. REGION·EXPERTISE는 Subject.region/expertiseTags에 Classification.id가
+// 아니라 label 문자열을 그대로 복사해 저장하므로, 라벨을 바꾸면 이미 그 값을
+// 쓰던 사람·기구도 함께 옮겨야 예전 라벨을 쓴 것들이 "목록에 없는 값"으로
+// 밀려나지 않는다(relabelSubjectsForClassification). ACTIVITY_SERVICE 등
+// 나머지 domain은 외래키로만 연결되어 있어 이 재라벨링이 필요 없다.
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const active = await getActiveSession();
   if (!active) {
@@ -46,7 +47,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   if (oldLabel !== newLabel) {
     await prisma.$transaction(async (tx) => {
       await tx.classification.update({ where: { id }, data: { label: newLabel } });
-      const affectedSubjects = isClassificationDomain(classification.domain)
+      const affectedSubjects = isSubjectLabelDomain(classification.domain)
         ? await relabelSubjectsForClassification(tx, classification.domain, oldLabel, newLabel)
         : 0;
       await tx.auditLog.create({
