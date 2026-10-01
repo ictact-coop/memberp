@@ -2,6 +2,8 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth/roles";
 import { prisma } from "@/lib/prisma";
 import { countSubjectReferences } from "@/lib/subject-merge";
+import { findSimilarPairs } from "@/lib/text-similarity";
+import { MergeSuggestions } from "@/components/MergeSuggestions";
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid: "합칠 기구 두 곳을 모두 선택하세요.",
@@ -46,6 +48,7 @@ export default async function MergeOrgUnitsPage({
   const effectiveError = error ?? previewError ?? undefined;
 
   const counts = source && target ? await countSubjectReferences(prisma, source.id) : null;
+  const suggestedPairs = findSimilarPairs(orgUnits, (o) => o.name);
 
   return (
     <section>
@@ -94,45 +97,52 @@ export default async function MergeOrgUnitsPage({
           </form>
         </>
       ) : (
-        <form method="GET" action="/admin/org-units/merge" className="card">
-          <label htmlFor="sourceId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
-            병합할 기구 (없앨 쪽 — 보관 처리됨)
-          </label>
-          <select
-            id="sourceId"
-            name="sourceId"
-            required
-            style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
-          >
-            <option value="">선택하세요</option>
-            {orgUnits.map((orgUnit) => (
-              <option key={orgUnit.id} value={orgUnit.id}>
-                {orgUnit.displayId} · {orgUnit.name}
-              </option>
-            ))}
-          </select>
+        <>
+          <MergeSuggestions
+            pairs={suggestedPairs}
+            renderLabel={(o) => `${o.displayId} · ${o.name}`}
+            buildHref={(a, b) => `/admin/org-units/merge?sourceId=${a.id}&targetId=${b.id}`}
+          />
+          <form method="GET" action="/admin/org-units/merge" className="card">
+            <label htmlFor="sourceId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+              병합할 기구 (없앨 쪽 — 보관 처리됨)
+            </label>
+            <select
+              id="sourceId"
+              name="sourceId"
+              required
+              style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
+            >
+              <option value="">선택하세요</option>
+              {orgUnits.map((orgUnit) => (
+                <option key={orgUnit.id} value={orgUnit.id}>
+                  {orgUnit.displayId} · {orgUnit.name}
+                </option>
+              ))}
+            </select>
 
-          <label htmlFor="targetId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
-            합칠 대상 기구 (남길 쪽)
-          </label>
-          <select
-            id="targetId"
-            name="targetId"
-            required
-            style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 16 }}
-          >
-            <option value="">선택하세요</option>
-            {orgUnits.map((orgUnit) => (
-              <option key={orgUnit.id} value={orgUnit.id}>
-                {orgUnit.displayId} · {orgUnit.name}
-              </option>
-            ))}
-          </select>
+            <label htmlFor="targetId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+              합칠 대상 기구 (남길 쪽)
+            </label>
+            <select
+              id="targetId"
+              name="targetId"
+              required
+              style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 16 }}
+            >
+              <option value="">선택하세요</option>
+              {orgUnits.map((orgUnit) => (
+                <option key={orgUnit.id} value={orgUnit.id}>
+                  {orgUnit.displayId} · {orgUnit.name}
+                </option>
+              ))}
+            </select>
 
-          <button type="submit" style={{ padding: "10px 16px", fontSize: 16 }}>
-            다음 (미리보기)
-          </button>
-        </form>
+            <button type="submit" style={{ padding: "10px 16px", fontSize: 16 }}>
+              다음 (미리보기)
+            </button>
+          </form>
+        </>
       )}
     </section>
   );

@@ -6,6 +6,8 @@ import {
   CLASSIFICATION_DOMAIN_LABELS,
   isClassificationDomain,
 } from "@/lib/classification-labels";
+import { findSimilarPairs } from "@/lib/text-similarity";
+import { MergeSuggestions } from "@/components/MergeSuggestions";
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid: "종류와 합칠 분류 두 항목을 모두 선택하세요.",
@@ -82,6 +84,12 @@ export default async function MergeClassificationsPage({
           prisma.activityClassification.count({ where: { classificationId: source.id } }),
         ])
       : null;
+  // 이미 사용 중지된 분류끼리는(둘 다 정리가 끝난 셈이라) 후보로 보여줄
+  // 필요가 없다 — 지금 쓰이는 라벨들 사이의 중복만 찾는다.
+  const suggestedPairs = findSimilarPairs(
+    items.filter((item) => item.active),
+    (item) => item.label,
+  );
 
   return (
     <section>
@@ -124,36 +132,45 @@ export default async function MergeClassificationsPage({
           </form>
         </>
       ) : (
-        <form method="GET" action="/admin/classifications/merge" className="card">
-          <input type="hidden" name="domain" value={domain} />
-          <label htmlFor="sourceId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
-            병합할 분류 (없앨 쪽 — 사용 중지됨)
-          </label>
-          <select id="sourceId" name="sourceId" required style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}>
-            <option value="">선택하세요</option>
-            {items.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label} ({item.code}){!item.active && " · 사용 중지됨"}
-              </option>
-            ))}
-          </select>
+        <>
+          <MergeSuggestions
+            pairs={suggestedPairs}
+            renderLabel={(item) => `${item.label} (${item.code})`}
+            buildHref={(a, b) =>
+              `/admin/classifications/merge?domain=${domain}&sourceId=${a.id}&targetId=${b.id}`
+            }
+          />
+          <form method="GET" action="/admin/classifications/merge" className="card">
+            <input type="hidden" name="domain" value={domain} />
+            <label htmlFor="sourceId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+              병합할 분류 (없앨 쪽 — 사용 중지됨)
+            </label>
+            <select id="sourceId" name="sourceId" required style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}>
+              <option value="">선택하세요</option>
+              {items.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label} ({item.code}){!item.active && " · 사용 중지됨"}
+                </option>
+              ))}
+            </select>
 
-          <label htmlFor="targetId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
-            합칠 대상 (남길 쪽 — 반드시 사용 중인 분류)
-          </label>
-          <select id="targetId" name="targetId" required style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 16 }}>
-            <option value="">선택하세요</option>
-            {items.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label} ({item.code}){!item.active && " · 사용 중지됨"}
-              </option>
-            ))}
-          </select>
+            <label htmlFor="targetId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+              합칠 대상 (남길 쪽 — 반드시 사용 중인 분류)
+            </label>
+            <select id="targetId" name="targetId" required style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 16 }}>
+              <option value="">선택하세요</option>
+              {items.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label} ({item.code}){!item.active && " · 사용 중지됨"}
+                </option>
+              ))}
+            </select>
 
-          <button type="submit" style={{ padding: "10px 16px", fontSize: 16 }}>
-            다음 (미리보기)
-          </button>
-        </form>
+            <button type="submit" style={{ padding: "10px 16px", fontSize: 16 }}>
+              다음 (미리보기)
+            </button>
+          </form>
+        </>
       )}
     </section>
   );
