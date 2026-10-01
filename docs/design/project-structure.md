@@ -226,7 +226,8 @@ accept-invitation?token=…      login (이메일 입력)
 - `(protected)/layout.tsx`가 매 요청마다 `getActiveSession()`으로 계정 상태·세션 만료·
   2단계 인증 완료 여부를 확인한다. 계정을 정지하면 그 다음 요청부터 바로 막힌다(FR-01).
 - 인가(authorization)는 `src/lib/auth/roles.ts`에 있다 — 아래 "역할 기반 접근 제어" 참고.
-- CSRF는 세션 쿠키의 `SameSite=Lax`에 기대고 있다 — 별도 CSRF 토큰은 아직 없다.
+- CSRF 방어는 세션 쿠키의 `SameSite=Lax`에 더해 `src/middleware.ts`의 Origin
+  검증이 한 겹 더 있다(아래 "CSRF 방어 — Origin/Referer 검증" 절 참고).
 - **로그인 요청·2단계 인증 속도 제한(`src/lib/rate-limit.ts`)**: Redis 없이
   Postgres 표(`RateLimitAttempt`) 하나로 처리한다(ADR-0001 — 배경작업 인프라를
   먼저 들이지 않는다). `checkRateLimit(scope, key, { limit, windowMs })`가
@@ -244,6 +245,34 @@ accept-invitation?token=…      login (이메일 입력)
   - TOTP 등록 화면(`/login/totp/setup`)은 제한하지 않는다 — 비밀키를 화면에
     직접 보여준 상태에서 그 자리에서 검증하는 것이라, 추측이 아니라 이미
     가진 값을 맞히는 것이기 때문이다.
+
+## CSRF 방어 — Origin/Referer 검증 (`src/middleware.ts`)
+
+로그인 세션 쿠키가 이미 `SameSite=Lax`로 발급되어 크로스사이트 POST 대부분을
+막아주지만(위 "인증 흐름" 참고), 폼 기반 앱 특성상 한 겹 더 두기로 했다.
+
+- **동기화 토큰 대신 Origin 검증을 택했다**: 이 앱의 모든 폼은 자바스크립트
+  없는 순수 HTML `<form>`이다. 전통적인 CSRF 토큰(각 폼에 숨은 필드로 심고
+  각 API가 검증)을 쓰려면 POST API 라우트 48개와 그보다 많은 화면 파일을
+  전부 고쳐야 하는데, 하나라도 빠뜨리면 그 기능이 조용히 막혀버리는 회귀
+  위험이 크다. 대신 브라우저가 상태를 바꾸는 요청에는 항상 실어 보내는
+  Origin(없으면 Referer) 헤더만으로 "이 요청이 우리 사이트 자신에게서
+  왔는가"를 미들웨어 한 곳에서 확인한다 — OWASP CSRF 치트시트가 인정하는
+  방어 기법("Verifying Origin with Standard Headers")이면서, 기존 화면·API
+  코드는 한 줄도 건드리지 않는다. 새 POST 라우트가 추가돼도 이 파일 하나가
+  자동으로 적용되므로 "깜빡하고 안 넣었다"가 구조적으로 불가능하다.
+- **POST·PUT·PATCH·DELETE만 검사한다**: GET 요청은 그대로 통과시킨다(지금 이
+  앱에는 PUT·PATCH·DELETE 라우트가 없지만 방어적으로 포함해 뒀다). Origin
+  헤더가 있으면 그 값을, 없으면 Referer 헤더에서 origin만 뽑아 비교한다 —
+  요청 자신의 `nextUrl.origin`(Host 헤더 기반)과 다르면, 또는 둘 다 없으면
+  403으로 거부한다. `nextUrl.origin`은 모든 API 라우트가 리다이렉트 URL을
+  만들 때 쓰는 `new URL(path, request.url)`과 같은 기준이라, 배포 환경(로컬·
+  Docker·운영)마다 새로 설정할 값이 없다.
+- **세션 쿠키가 유효해도 막는다**: 로그인된 계정의 세션 쿠키를 그대로 쓰더라도
+  Origin/Referer가 틀리거나 없으면 미들웨어 단계에서 거부되어 라우트 핸들러
+  자체가 실행되지 않는다 — "탈취된 세션 쿠키를 다른 출처에서 재생"하는 시나리오
+  까지 막아 두려는 것이다(실제로 유효한 세션 쿠키 + Origin 헤더 없음 조합으로
+  테스트해 403을 확인했다, 아래 검증 이력 참고).
 
 ## 내 정보 화면 (`/my/profile`, FR-03 구현)
 
@@ -2104,3 +2133,15 @@ npm run dev                  # http://localhost:3000
     나타나지 않음을 확인; 후보가 전혀 없는 도메인(EXPERTISE, 등록된 분류
     없음)에서는 카드 자체가 나타나지 않음을 확인. 검증용 기구·사람·분류·
     세션은 모두 삭제함
+  - CSRF 방어(Origin/Referer 검증): GET 요청은 Origin/Referer 유무와 무관하게
+    그대로 통과함을 확인; 올바른 Origin 헤더를 실어 보낸 로그인·관리자 등록
+    (urlencoded)·첨부파일 업로드(multipart) POST가 모두 정상적으로 실제
+    라우트까지 도달함(CSRF 계층에서 막히지 않음)을 확인; 같은 요청에서
+    Origin 대신 같은 출처의 Referer만 보내도 통과함을 확인; Origin을 다른
+    출처(`http://evil.example.com`)로 바꾸면 403으로 거부됨을 확인; Origin·
+    Referer를 둘 다 안 보내면 403으로 거부됨을 확인; **유효한 로그인 세션
+    쿠키를 그대로 쓰더라도** Origin/Referer가 없으면 403으로 거부되고 실제로
+    DB에 아무 것도 생성되지 않음을 확인(세션 쿠키 하나만으로는 더 이상 통과할
+    수 없다는 것이 이 방어의 핵심) — 반대로 올바른 Origin과 함께 보내면
+    정상적으로 레코드가 생성됨을 같은 세션으로 비교 확인했다. 검증용으로
+    만든 기구·첨부파일(로컬 디스크 파일 포함)·세션은 모두 정리함
