@@ -9,6 +9,7 @@ const TOOLS = [
   { href: "/admin/org-units", label: "기구 관리", description: "기구(Subject) 등록·목록" },
   { href: "/admin/classifications", label: "분류 관리", description: "지역·전문영역 분류표 등록·사용 중지" },
   { href: "/admin/audit-log", label: "상태 이력 조회", description: "활동·상담 상태 변경 기록" },
+  { href: "/admin/notices", label: "공지사항 발송", description: "전체·역할별로 앱 내 알림 보내기" },
   { href: "/admin/backup", label: "데이터 백업", description: "업무 데이터 전체를 JSON으로 내보내기" },
 ] as const;
 
