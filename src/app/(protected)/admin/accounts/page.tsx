@@ -12,6 +12,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_transition: "지금 상태에서는 그 처리를 할 수 없습니다.",
   reason_required: "사유를 입력해야 합니다.",
   cannot_change_self: "자기 자신의 계정 상태는 이 화면에서 바꿀 수 없습니다.",
+  cannot_reset_own_totp: "자기 자신의 TOTP는 이 화면에서 재설정할 수 없습니다. 다른 관리자에게 요청하세요.",
+  totp_not_enrolled: "이 계정은 TOTP가 등록되어 있지 않습니다.",
 };
 
 // 계정 상태 관리 — FR-01. 관리자 허브에 자리표시자로만 남아 있던 화면을 채운다.
@@ -82,6 +84,9 @@ export default async function AccountsPage({
                   {isSelf && (
                     <span style={{ fontSize: 12, color: "var(--color-text-muted)" }}>(나)</span>
                   )}
+                  {account.totpEnabledAt && (
+                    <span className="badge badge-gray">TOTP 등록됨</span>
+                  )}
                 </div>
                 {account.subject && (
                   <div style={{ fontSize: 13, color: "var(--color-text-muted)", marginTop: 2 }}>
@@ -92,38 +97,60 @@ export default async function AccountsPage({
                   <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 8, marginBottom: 0 }}>
                     자기 자신의 계정 상태는 바꿀 수 없습니다.
                   </p>
-                ) : actions.length === 0 ? (
-                  <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 8, marginBottom: 0 }}>
-                    이 상태에서 처리할 수 있는 전이가 없습니다.
-                  </p>
                 ) : (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
-                    {actions.map((action) => {
-                      const reasonRequired = ACCOUNT_STATUS_TRANSITIONS[action].reasonRequired;
-                      return (
-                        <form
-                          key={action}
-                          method="POST"
-                          action={`/api/admin/accounts/${account.id}/status`}
-                          style={{ display: "flex", flexDirection: "column", gap: 6 }}
-                        >
-                          <input type="hidden" name="action" value={action} />
-                          {reasonRequired && (
-                            <textarea
-                              name="reason"
-                              required
-                              placeholder="사유 (필수)"
-                              rows={2}
-                              style={{ width: 200, padding: 6, fontSize: 13 }}
-                            />
-                          )}
-                          <button type="submit" style={{ padding: "6px 12px", fontSize: 13 }}>
-                            {ACCOUNT_STATUS_ACTION_LABELS[action]}
-                          </button>
-                        </form>
-                      );
-                    })}
-                  </div>
+                  <>
+                    {actions.length === 0 ? (
+                      <p style={{ fontSize: 12, color: "var(--color-text-muted)", marginTop: 8, marginBottom: 0 }}>
+                        이 상태에서 처리할 수 있는 전이가 없습니다.
+                      </p>
+                    ) : (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 }}>
+                        {actions.map((action) => {
+                          const reasonRequired = ACCOUNT_STATUS_TRANSITIONS[action].reasonRequired;
+                          return (
+                            <form
+                              key={action}
+                              method="POST"
+                              action={`/api/admin/accounts/${account.id}/status`}
+                              style={{ display: "flex", flexDirection: "column", gap: 6 }}
+                            >
+                              <input type="hidden" name="action" value={action} />
+                              {reasonRequired && (
+                                <textarea
+                                  name="reason"
+                                  required
+                                  placeholder="사유 (필수)"
+                                  rows={2}
+                                  style={{ width: 200, padding: 6, fontSize: 13 }}
+                                />
+                              )}
+                              <button type="submit" style={{ padding: "6px 12px", fontSize: 13 }}>
+                                {ACCOUNT_STATUS_ACTION_LABELS[action]}
+                              </button>
+                            </form>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {account.totpEnabledAt && (
+                      <form
+                        method="POST"
+                        action={`/api/admin/accounts/${account.id}/reset-totp`}
+                        style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}
+                      >
+                        <textarea
+                          name="reason"
+                          required
+                          placeholder="재설정 사유 (필수 — 예: 기기·복구코드 분실 확인함)"
+                          rows={2}
+                          style={{ width: 280, padding: 6, fontSize: 13 }}
+                        />
+                        <button type="submit" className="btn-outline" style={{ padding: "6px 12px", fontSize: 13, width: "fit-content" }}>
+                          TOTP 재설정 (재등록 유도)
+                        </button>
+                      </form>
+                    )}
+                  </>
                 )}
               </li>
             );

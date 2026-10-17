@@ -1137,6 +1137,24 @@ text-similarity.ts`)만으로 "이름/라벨이 완전히 같거나 비슷한 �
   수 있게 방어적으로 남겼다.
 - 모든 전이는 `AuditLog`(`entityType: "Account"`, `action: "STATUS_CHANGE"`)에
   행위자·이전/이후 상태·사유와 함께 남아 `/admin/audit-log`에서 조회된다.
+- **TOTP 재설정(`POST /api/admin/accounts/[id]/reset-totp`)**: 계정 상태와는
+  다른 문제지만 같은 화면에 자연스럽게 붙는다 — 임원·재무·운영관리자 등
+  TOTP가 강제되는 역할(`ELEVATED_ROLES`)인 계정이 기기와 복구 코드 10개를
+  모두 잃어버리면 `/login/totp`에 코드·복구코드 입력 칸만 있어 앱 안에
+  복구 수단이 전혀 없었다 — 지금까지는 DB를 직접 고쳐야만 풀렸다. 이 버튼
+  하나로 `totpEnabledAt`·`totpSecretCiphertext`를 지우고 남아 있던
+  `TotpRecoveryCode`를 전부 삭제해, 다음 로그인 때 `/login/totp/setup`에서
+  새로 등록하게 한다. 혹시 남아 있는 세션이 있으면
+  `revokeAllSessionsForAccount`로 함께 끊어 재인증을 강제한다(이 함수는
+  그동안 정의돼 있었지만 실제로 쓰이는 곳이 없었다 — 계정 정지·탈퇴는
+  `getActiveSession()`의 매 요청 상태 확인만으로 충분해 애초에 필요 없었다).
+  사유를 반드시 남기고(suspend·withdraw와 같은 원칙), `AuditLog`
+  (`entityType: "Account"`, `action: "UPDATE"`)에 지워진 복구코드 수까지
+  남긴다. 이미 TOTP가 등록되지 않은 계정에는 이 버튼 자체가 나타나지 않는다.
+- **자기 자신의 TOTP는 재설정할 수 없다**: 계정 상태 자기 변경 금지와 같은
+  모양이지만 이유는 다르다 — 세션을 탈취한 사람이 스스로 자기(피해자) 계정의
+  2단계 인증을 꺼버리고 자기 기기로 다시 등록해 원래 소유자를 완전히 몰아낼
+  수 있는 경로를 막기 위해서다. 다른 관리자가 처리하게(두 사람 확인) 했다.
 
 ## 상태 이력 조회 화면 (`/admin/audit-log`)
 
@@ -2145,3 +2163,19 @@ npm run dev                  # http://localhost:3000
     수 없다는 것이 이 방어의 핵심) — 반대로 올바른 Origin과 함께 보내면
     정상적으로 레코드가 생성됨을 같은 세션으로 비교 확인했다. 검증용으로
     만든 기구·첨부파일(로컬 디스크 파일 포함)·세션은 모두 정리함
+  - TOTP 재설정: 이번 라운드는 샌드박스 컨테이너가 재시작되어 `node_modules`·
+    `.env`·로컬 PostgreSQL이 전부 사라진 상태에서 시작했다 — `npm install`·
+    `npx prisma generate`·역할·DB 재생성(`CREATE ROLE`/`CREATE DATABASE`)·
+    `npx prisma migrate deploy`로 처음부터 다시 띄운 뒤 검증했다. TOTP가
+    등록된 계정(복구 코드 2개·세션 1개 포함)으로 재설정을 실행해
+    `totpEnabledAt`·`totpSecretCiphertext`가 모두 null로 바뀜, 남아 있던
+    복구 코드 2개가 전부 삭제됨, 기존 세션이 `revokedAt`으로 즉시 폐기됨,
+    `AuditLog`에 지워진 복구코드 수까지 정확히 남음을 확인; 재설정 후 그
+    계정으로 실제 로그인 토큰을 발급해 `/api/auth/verify`를 호출하면
+    `/login/totp/setup`(재등록 화면)으로 보내짐을 실제 HTTP 요청으로 확인—
+    "복구 수단을 완전히 잃은 계정이 다시 로그인할 수 있게 됐는지"까지 끝까지
+    따라갔다. TOTP가 등록되지 않은 계정에는 `error=totp_not_enrolled`로
+    거부됨, 관리자가 자기 자신에게 실행하면 `error=cannot_reset_own_totp`로
+    거부됨, 사유 없이 제출하면 `error=reason_required`로 거부됨(둘 다 DB
+    변화 없음)을 확인. 검증 후 전체 테이블을 비워 마이그레이션만 적용된
+    빈 DB 상태로 되돌려 뒀다

@@ -105,7 +105,10 @@ export async function revokeCurrentSession() {
   cookieStore.delete(SESSION_COOKIE_NAME);
 }
 
-// 사무국이 계정을 정지·탈퇴 처리할 때 호출한다 — 세션 만료를 기다리지 않고 즉시 끊는다.
+// 자격 증명을 재설정했을 때(TOTP 재설정 등) 기존 세션을 끊어 재인증을
+// 강제한다. 계정 정지·탈퇴(FR-01)는 이 함수 없이도 즉시 막힌다 —
+// getActiveSession()이 매 요청마다 status==="ACTIVE"를 다시 확인하기
+// 때문이다(위 getActiveSession 주석 참고).
 export async function revokeAllSessionsForAccount(accountId: string) {
   await prisma.session.updateMany({
     where: { accountId, revokedAt: null },
