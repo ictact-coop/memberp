@@ -54,7 +54,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   await prisma.$transaction(async (tx) => {
-    await tx.account.update({ where: { id }, data: { status: rule.to } });
+    await tx.account.update({
+      where: { id },
+      data: {
+        status: rule.to,
+        // 실제로 탈퇴 처리가 확정되면 "본인 탈퇴 신청" 기록은 그 목적을
+        // 다한 것이라 함께 지운다 — 탈퇴한 계정에 신청 배지가 계속 남는
+        // 일이 없게 한다.
+        ...(action === "withdraw" ? { withdrawalRequestedAt: null, withdrawalRequestReason: null } : {}),
+      },
+    });
     await tx.auditLog.create({
       data: {
         entityType: "Account",

@@ -87,10 +87,20 @@ export default async function AccountsPage({
                   {account.totpEnabledAt && (
                     <span className="badge badge-gray">TOTP 등록됨</span>
                   )}
+                  {account.withdrawalRequestedAt && (
+                    <span className="badge badge-red">
+                      탈퇴 신청됨 ({account.withdrawalRequestedAt.toISOString().slice(0, 10)})
+                    </span>
+                  )}
                 </div>
                 {account.subject && (
                   <div style={{ fontSize: 13, color: "var(--color-text-muted)", marginTop: 2 }}>
                     {account.subject.displayId} · {account.subject.name}
+                  </div>
+                )}
+                {account.withdrawalRequestReason && (
+                  <div style={{ fontSize: 13, color: "var(--color-text-muted)", marginTop: 2 }}>
+                    탈퇴 신청 사유: {account.withdrawalRequestReason}
                   </div>
                 )}
                 {isSelf ? (
@@ -120,6 +130,9 @@ export default async function AccountsPage({
                                   name="reason"
                                   required
                                   placeholder="사유 (필수)"
+                                  defaultValue={
+                                    action === "withdraw" ? account.withdrawalRequestReason ?? "" : ""
+                                  }
                                   rows={2}
                                   style={{ width: 200, padding: 6, fontSize: 13 }}
                                 />
@@ -147,6 +160,17 @@ export default async function AccountsPage({
                         />
                         <button type="submit" className="btn-outline" style={{ padding: "6px 12px", fontSize: 13, width: "fit-content" }}>
                           TOTP 재설정 (재등록 유도)
+                        </button>
+                      </form>
+                    )}
+                    {account.withdrawalRequestedAt && (
+                      <form
+                        method="POST"
+                        action={`/api/admin/accounts/${account.id}/dismiss-withdrawal-request`}
+                        style={{ marginTop: 10 }}
+                      >
+                        <button type="submit" className="btn-outline" style={{ padding: "6px 12px", fontSize: 13 }}>
+                          탈퇴 신청 처리 안 함
                         </button>
                       </form>
                     )}

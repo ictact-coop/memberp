@@ -323,6 +323,12 @@ model Account {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
+  // FR-01/개인정보 자기결정권: 본인이 탈퇴를 신청한 시각·사유. 신청만으로
+  // status가 바뀌지는 않는다 — 실제 탈퇴 처리(WITHDRAWN)는 관리자가
+  // /admin/accounts에서 확정해야 한다(아래 "본인 탈퇴 신청" 절 참고).
+  withdrawalRequestedAt DateTime?
+  withdrawalRequestReason String?
+
   permissionGrants  PermissionGrant[]
   notifications     Notification[]
   loginTokens       LoginToken[]
