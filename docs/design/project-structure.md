@@ -1465,6 +1465,65 @@ v0.1이 명시한 규칙: "종결 후 새 요청은 원본을 참조하는 새 �
   `migrate`→`app` 순서 의존성·헬스체크 동작은 실제 조합 서버나 네트워크
   제약이 없는 환경에서 최초 실행 시 확인이 필요하다.
 
+## Vercel 배포
+
+Docker Compose(바로 위 절)는 조합이 서버 한 대를 직접 운영하는 경우를 위한
+것이고, Vercel은 서버를 직접 관리하지 않고 올려보고 싶을 때를 위한 경로다.
+Next.js를 만든 회사의 플랫폼이라 `next build` 자체는 설정 없이도 인식하지만,
+이 프로젝트의 Docker 전용 설정과 "로컬 디스크에 파일을 쓴다"는 가정 두 가지는
+Vercel에서 그대로 두면 깨진다 — 이번에 고친 지점이다.
+
+- **`output: "standalone"`은 Vercel 빌드에서 꺼야 한다**: Docker `runner`
+  스테이지가 `.next/standalone`만 복사해 쓰려고 넣은 옵션인데, Vercel은 자기
+  빌드 출력 체계가 따로 있어 이 옵션이 있으면 오히려 안 맞는다. Vercel
+  빌드에서는 플랫폼이 자동으로 `VERCEL=1`을 설정하므로, `next.config.mjs`가
+  그 값이 있을 때만 `output`을 빼도록 바꿨다 — Docker 빌드는 `VERCEL`을 설정할
+  일이 없으니 그대로 standalone 출력을 받는다(아래 검증 이력에서 두 경우
+  모두 실제로 빌드해 확인했다).
+- **마이그레이션은 `vercel.json`의 `buildCommand`가 맡는다**: Docker Compose는
+  별도 `migrate` 서비스가 있지만 Vercel에는 그런 멀티 서비스 개념이 없다.
+  `npx prisma generate && npx prisma migrate deploy && next build`를
+  빌드 명령으로 지정해, 매 배포(프로덕션 빌드)마다 그 시점의 DB에 마이그레이션을
+  적용한 뒤 빌드한다 — `DATABASE_URL`은 Vercel 프로젝트의 환경변수로 넣으면
+  빌드 단계에도 자동으로 노출된다.
+- **첨부파일은 반드시 S3 드라이버를 써야 한다**: 로컬 디스크 드라이버
+  (`ATTACHMENT_STORAGE_DRIVER` 기본값)는 서버 한 대가 계속 떠 있다고 가정한다
+  (ADR-0004, "첨부파일" 절 참고). Vercel의 서버리스 함수는 요청마다 다른
+  인스턴스에서 실행될 수 있어 로컬 디스크에 쓴 파일이 다음 요청에는 없을 수
+  있다 — 이미 만들어 둔 S3/MinIO 드라이버("첨부파일 저장소 — S3/MinIO 지원"
+  절)를 그대로 켜면 된다. `.env.example`에 이 경고를 추가했다.
+- **그 외에는 바꾼 게 없다**: CSRF 미들웨어(Origin/Referer 검증)는 Edge
+  런타임에서 표준 Web API만 쓰므로 그대로 동작한다. 로그인 속도 제한
+  (`RateLimitAttempt`)도 Redis 없이 Postgres 테이블 하나로 처리하므로 추가
+  인프라가 필요 없다. 세션 쿠키의 `secure` 플래그는 `NODE_ENV==="production"`
+  기준이라 Vercel 프로덕션 배포에서 자동으로 켜진다.
+
+### 배포 절차(조합이 직접 할 일)
+
+1. **DB 준비**: Neon이나 Supabase 등에서 Postgres를 하나 만들고 연결 문자열을
+   받는다(둘 다 서버리스 환경에 맞춘 커넥션 풀링을 지원해 Vercel과 잘 맞는다).
+2. **Vercel 프로젝트 생성**: vercel.com에서 이 GitHub 저장소를 연결한다 —
+   `vercel.json`이 있어 빌드 명령은 자동으로 잡힌다.
+3. **환경변수 설정**(Vercel 프로젝트 설정 → Environment Variables):
+   `DATABASE_URL`(1번 값), `APP_BASE_URL`(배포될 주소, 예:
+   `https://메인도메인.vercel.app`), `TOTP_ENCRYPTION_KEY`(`openssl rand
+   -base64 32`), `RESEND_API_KEY`·`EMAIL_FROM`, `ATTACHMENT_STORAGE_DRIVER=s3`
+   와 `ATTACHMENT_S3_*`/`AWS_*`(S3 호환 버킷 — AWS S3·Cloudflare R2·Supabase
+   Storage 등).
+4. **첫 배포 후 최초 관리자 초대**: 서버에 직접 접속할 수 없으므로
+   `npx tsx prisma/bootstrap-admin.ts you@example.org`를 **로컬 컴퓨터에서**
+   `DATABASE_URL`을 1번 값으로 바꿔 실행한다 — 이 스크립트는 초대장만 만들고
+   끝나므로(ADR-0002), 운영 서버 프로세스에 접속할 필요가 없다.
+- **정직하게 남겨둔 것**: 이 샌드박스에는 Vercel·Neon/Supabase 계정이 없어
+  실제 배포·실제 외부 Postgres 연결까지는 확인하지 못했다. 대신 확인한 것:
+  `VERCEL=1`로 `next build`를 실행하면 `.next/standalone`이 안 생기고(Vercel이
+  기대하는 모양), `VERCEL`을 안 주면 그대로 생김(Docker가 기대하는 모양)을
+  둘 다 실제로 빌드해 확인; `vercel.json`의 빌드 명령 전체(`prisma generate
+  && prisma migrate deploy && next build`)를 완전히 빈 로컬 PostgreSQL
+  DB(마이그레이션 0건 상태)에 대해 그대로 실행해, 11개 마이그레이션이 전부
+  적용되고 빌드가 끝까지 성공함을 확인(검증용 DB는 이후 삭제함) — 실제
+  첫 배포가 겪을 상황과 똑같다.
+
 ## CI (GitHub Actions, `.github/workflows/ci.yml`)
 
 push(main)·PR마다 두 잡을 돌린다. `docker` 잡은 바로 위 "정직하게 남겨둔
