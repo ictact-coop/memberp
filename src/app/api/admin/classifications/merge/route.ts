@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getActiveSession } from "@/lib/auth/session";
 import { hasAnyRole } from "@/lib/auth/roles";
-import { isClassificationDomain, relabelSubjectsForClassification } from "@/lib/classification-labels";
+import { isSubjectLabelDomain, relabelSubjectsForClassification } from "@/lib/classification-labels";
 
 const ADMIN_ROLES = ["SECRETARIAT", "SYSTEM_ADMIN"] as const;
 
@@ -13,8 +13,9 @@ const ADMIN_ROLES = ["SECRETARIAT", "SYSTEM_ADMIN"] as const;
 //      진짜 외래키라 그대로 재대입한다. 단, 같은 활동이 source·target 둘 다에
 //      이미 연결돼 있으면(중복 태깅) 유일 제약(activityId, classificationId)에
 //      걸리므로, 그 경우는 source 쪽 연결을 지우고 target 연결만 남긴다.
-//   2) Subject.region/expertiseTags — label 문자열 값 자체를 옮긴다
-//      (relabelSubjectsForClassification, 위 update 라우트와 동일한 헬퍼).
+//   2) Subject.region/expertiseTags — REGION·EXPERTISE만 label 문자열 값 자체를
+//      옮긴다(relabelSubjectsForClassification, 위 update 라우트와 동일한 헬퍼).
+//      ACTIVITY_SERVICE 등 외래키로만 연결된 domain은 1)만으로 충분하다.
 // source는 삭제하지 않고 사용 중지(active=false)로 물러나게 한다 — 이미 있는
 // "사용 중지" 개념을 그대로 재사용한다(별도 archivedAt 필드가 없다).
 export async function POST(request: Request) {
@@ -81,7 +82,7 @@ export async function POST(request: Request) {
       });
     }
 
-    const affectedSubjects = isClassificationDomain(source.domain)
+    const affectedSubjects = isSubjectLabelDomain(source.domain)
       ? await relabelSubjectsForClassification(tx, source.domain, source.label, target.label)
       : 0;
 

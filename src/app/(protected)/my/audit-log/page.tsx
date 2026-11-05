@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { requireActiveSession } from "@/lib/auth/session";
 import { AuditLogEntries } from "@/components/AuditLogEntries";
+import { AuditLogPagination } from "@/components/AuditLogPagination";
+import { AUDIT_LOG_PAGE_SIZE, parseAuditLogPage } from "@/lib/audit-labels";
 
 // 내 담당 이력 — v1.0 "활동 책임자·상담 담당자가 내가 담당한 항목의 변경 이력만
 // 보는 화면"을 채운다. /admin/audit-log는 시스템 관리자 전용(v1.0 역할표)이라
@@ -11,10 +13,10 @@ import { AuditLogEntries } from "@/components/AuditLogEntries";
 export default async function MyAuditLogPage({
   searchParams,
 }: {
-  searchParams: Promise<{ entityType?: string; entityId?: string }>;
+  searchParams: Promise<{ entityType?: string; entityId?: string; page?: string }>;
 }) {
   const active = await requireActiveSession();
-  const { entityType, entityId } = await searchParams;
+  const { entityType, entityId, page: pageRaw } = await searchParams;
 
   const [managedActivities, assignedNeeds] = await Promise.all([
     prisma.activity.findMany({
@@ -35,18 +37,31 @@ export default async function MyAuditLogPage({
       { entityType: "Need", entityId: { in: needIds } },
     ],
   };
+  const where = {
+    AND: [scopedWhere, entityType ? { entityType } : {}, entityId ? { entityId } : {}],
+  };
+
+  const total = await prisma.auditLog.count({ where });
+  // 요청된 page가 마지막 페이지보다 크면(필터를 바꿔 결과가 줄어든 경우 등)
+  // 조용히 마지막 페이지로 맞춘다 — 빈 화면 대신 있는 결과를 보여준다.
+  const totalPages = Math.max(1, Math.ceil(total / AUDIT_LOG_PAGE_SIZE));
+  const page = Math.min(parseAuditLogPage(pageRaw), totalPages);
 
   const logs = await prisma.auditLog.findMany({
-    where: {
-      AND: [
-        scopedWhere,
-        entityType ? { entityType } : {},
-        entityId ? { entityId } : {},
-      ],
-    },
+    where,
     orderBy: { occurredAt: "desc" },
-    take: 200,
+    skip: (page - 1) * AUDIT_LOG_PAGE_SIZE,
+    take: AUDIT_LOG_PAGE_SIZE,
   });
+
+  const buildHref = (targetPage: number) => {
+    const params = new URLSearchParams();
+    if (entityType) params.set("entityType", entityType);
+    if (entityId) params.set("entityId", entityId);
+    if (targetPage > 1) params.set("page", String(targetPage));
+    const qs = params.toString();
+    return qs ? `/my/audit-log?${qs}` : "/my/audit-log";
+  };
 
   const actorIds = Array.from(
     new Set(logs.map((log) => log.actorAccountId).filter((id): id is string => id !== null)),
@@ -82,6 +97,7 @@ export default async function MyAuditLogPage({
       </form>
 
       <AuditLogEntries logs={logs} actorLabelById={actorLabelById} />
+      <AuditLogPagination page={page} pageSize={AUDIT_LOG_PAGE_SIZE} total={total} buildHref={buildHref} />
     </section>
   );
 }

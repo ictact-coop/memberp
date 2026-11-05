@@ -36,6 +36,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
   const plannedEndDateRaw = formData.get("plannedEndDate");
   const parentActivityIdRaw = formData.get("parentActivityId");
   const budgetBaselineRaw = formData.get("budgetBaseline");
+  const approverAccountIdRaw = formData.get("approverAccountId");
 
   const isValidManagementType =
     typeof managementTypeRaw === "string" &&
@@ -106,6 +107,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
     );
   }
 
+  const approverAccountId =
+    typeof approverAccountIdRaw === "string" && approverAccountIdRaw ? approverAccountIdRaw : null;
+  if (approverAccountId) {
+    if (approverAccountId === managerAccountId) {
+      return NextResponse.redirect(
+        new URL(`/activities/${activityId}/edit?error=approver_same_as_manager`, request.url),
+      );
+    }
+    const approver = await prisma.account.findUnique({ where: { id: approverAccountId } });
+    if (!approver) {
+      return NextResponse.redirect(
+        new URL(`/activities/${activityId}/edit?error=invalid_approver`, request.url),
+      );
+    }
+  }
+
   await prisma.$transaction(async (tx) => {
     await tx.activity.update({
       where: { id: activityId },
@@ -120,6 +137,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
         plannedEndDate,
         parentActivityId,
         budgetBaseline,
+        approverAccountId,
         updatedBy: active.account.id,
       },
     });
@@ -140,6 +158,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
           plannedEndDate: activity.plannedEndDate,
           parentActivityId: activity.parentActivityId,
           budgetBaseline: activity.budgetBaseline,
+          approverAccountId: activity.approverAccountId,
         },
         afterData: {
           title: title.trim(),
@@ -152,6 +171,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
           plannedEndDate,
           parentActivityId,
           budgetBaseline,
+          approverAccountId,
         },
       },
     });

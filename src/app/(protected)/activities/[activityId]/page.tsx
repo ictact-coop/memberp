@@ -59,6 +59,7 @@ export default async function ActivityDetailPage({
       },
       revisionOf: { select: { id: true, displayId: true, title: true } },
       revisions: { select: { id: true, displayId: true, title: true } },
+      classifications: { include: { classification: true } },
     },
   });
 
@@ -67,6 +68,19 @@ export default async function ActivityDetailPage({
   }
 
   const isManager = activity.managerAccountId === active.account.id;
+  // 결재 위임(v0.1 §4.10): approverAccountId가 있고 지금 승인 대기 상태면 승인·
+  // 반려는 위임받은 계정 몫이다 — 책임자 본인은 자기 결재를 할 수 없다.
+  const isApprover = activity.approverAccountId !== null && activity.approverAccountId === active.account.id;
+  const isDelegatedApprovalPending =
+    activity.status === "PENDING_APPROVAL" && activity.approverAccountId !== null;
+  const canManageStatus = isDelegatedApprovalPending ? isApprover : isManager;
+  const approverAccount =
+    activity.approverAccountId && (isManager || isApprover)
+      ? await prisma.account.findUnique({
+          where: { id: activity.approverAccountId },
+          select: { email: true, phone: true },
+        })
+      : null;
   const myAssignment = active.account.subjectId
     ? activity.assignments.find((assignment) => assignment.subjectId === active.account.subjectId)
     : undefined;
@@ -88,6 +102,23 @@ export default async function ActivityDetailPage({
   const isLocked = activity.status === "CLOSED" || activity.status === "CANCELLED";
   const canEditAttachments = !isLocked;
   const supersededBy = activity.revisions[0];
+
+  const currentServiceTags = activity.classifications
+    .map((link) => link.classification)
+    .filter((c) => c.domain === "ACTIVITY_SERVICE");
+  // 편집 체크박스에는 활성 분류 전부에, 이미 이 활동에 붙어 있는데 그사이
+  // 사용 중지된 분류가 있으면 그것도 더해 보여준다 — 안 하면 체크박스에서
+  // 사라진 채로 저장 시 조용히 태그가 떨어져 나가게 된다(분류 관리 화면의
+  // "사용 중지" 개념과 같은 원칙: 지운 게 아니라 새로 고를 수 없을 뿐).
+  const serviceClassificationOptions = isManager && !isLocked
+    ? await prisma.classification.findMany({
+        where: {
+          domain: "ACTIVITY_SERVICE",
+          OR: [{ active: true }, { id: { in: currentServiceTags.map((c) => c.id) } }],
+        },
+        orderBy: { label: "asc" },
+      })
+    : [];
 
   return (
     <section>
@@ -152,6 +183,18 @@ export default async function ActivityDetailPage({
               </dd>
             </>
           )}
+          {approverAccount && (
+            <>
+              <br />
+              <dt style={{ display: "inline", fontWeight: 600, color: "var(--color-text)" }}>
+                결재 위임
+              </dt>
+              <dd style={{ display: "inline", margin: "0 0 0 6px" }}>
+                {approverAccount.email ?? approverAccount.phone}
+                {isApprover ? " (나)" : ""}
+              </dd>
+            </>
+          )}
           {activity.closeEvaluationNote && (
             <>
               <br />
@@ -185,6 +228,53 @@ export default async function ActivityDetailPage({
               이 활동 변경 이력 →
             </Link>
           </p>
+        )}
+      </div>
+
+      <h2 style={{ fontSize: 16, marginTop: 24 }}>서비스 분류</h2>
+      <div className="card">
+        {currentServiceTags.length === 0 ? (
+          <p style={{ fontSize: 13, color: "var(--color-text-muted)", margin: 0 }}>
+            아직 붙은 분류가 없습니다.
+          </p>
+        ) : (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: isManager && !isLocked ? 10 : 0 }}>
+            {currentServiceTags.map((tag) => (
+              <span key={tag.id} className="badge badge-gray">
+                {tag.label}
+                {!tag.active && " (사용 중지됨)"}
+              </span>
+            ))}
+          </div>
+        )}
+        {isManager && !isLocked && (
+          <form method="POST" action={`/api/activities/${activity.id}/classify`}>
+            {serviceClassificationOptions.length === 0 ? (
+              <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
+                등록된 서비스 분류가 없습니다. 관리자에게 등록을 요청하세요.
+              </p>
+            ) : (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+                {serviceClassificationOptions.map((option) => (
+                  <label key={option.id} style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 4 }}>
+                    <input
+                      type="checkbox"
+                      name="classificationIds"
+                      value={option.id}
+                      defaultChecked={currentServiceTags.some((tag) => tag.id === option.id)}
+                    />
+                    {option.label}
+                    {!option.active && " (사용 중지됨)"}
+                  </label>
+                ))}
+              </div>
+            )}
+            {serviceClassificationOptions.length > 0 && (
+              <button type="submit" style={{ padding: "6px 12px", fontSize: 13 }}>
+                분류 저장
+              </button>
+            )}
+          </form>
         )}
       </div>
 
@@ -258,7 +348,14 @@ export default async function ActivityDetailPage({
         <p style={{ color: "var(--color-danger)", marginTop: 12 }}>{ERROR_MESSAGES[error]}</p>
       )}
 
-      {isManager && (
+      {isManager && !canManageStatus && (
+        <p className="card" style={{ color: "var(--color-text-muted)", marginTop: 16 }}>
+          이 활동은 {approverAccount?.email ?? approverAccount?.phone}에게 결재를 위임했습니다. 승인·반려
+          대기 중입니다.
+        </p>
+      )}
+
+      {canManageStatus && (
         <div style={{ marginTop: 16 }}>
           <h2 style={{ fontSize: 16 }}>상태 관리</h2>
           {availableActivityTransitions(activity.status).length === 0 ? (

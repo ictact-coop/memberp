@@ -7,6 +7,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid: "제목·내용·경로·접수일·담당자를 모두 입력하세요.",
   invalid_assignee: "선택한 담당자 계정을 확인할 수 없습니다.",
   invalid_budget: "예산 상한은 하한보다 작을 수 없습니다.",
+  invalid_follow_up: "후속으로 연결할 상담·수요를 확인할 수 없습니다(종결된 건만 가능).",
 };
 
 function todayInputValue(): string {
@@ -18,12 +19,12 @@ function todayInputValue(): string {
 export default async function NewNeedPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; followsUpOnNeedId?: string }>;
 }) {
   await requireRole(ACTIVITY_OPERATIONS_ROLES);
-  const { error } = await searchParams;
+  const { error, followsUpOnNeedId } = await searchParams;
 
-  const [accounts, subjects] = await Promise.all([
+  const [accounts, subjects, closedNeeds] = await Promise.all([
     prisma.account.findMany({
       where: { status: "ACTIVE" },
       orderBy: { email: "asc" },
@@ -34,6 +35,12 @@ export default async function NewNeedPage({
       orderBy: { name: "asc" },
       take: 200,
       select: { id: true, displayId: true, name: true },
+    }),
+    prisma.need.findMany({
+      where: { status: "CLOSED" },
+      orderBy: { updatedAt: "desc" },
+      take: 200,
+      select: { id: true, displayId: true, title: true },
     }),
   ]);
 
@@ -65,6 +72,27 @@ export default async function NewNeedPage({
           required
           style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
         />
+
+        {closedNeeds.length > 0 && (
+          <>
+            <label htmlFor="followsUpOnNeedId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+              이전 상담·수요의 후속인가요? (선택)
+            </label>
+            <select
+              id="followsUpOnNeedId"
+              name="followsUpOnNeedId"
+              defaultValue={followsUpOnNeedId ?? ""}
+              style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
+            >
+              <option value="">아니요 — 새로운 상담·수요입니다</option>
+              {closedNeeds.map((need) => (
+                <option key={need.id} value={need.id}>
+                  {need.displayId} · {need.title}
+                </option>
+              ))}
+            </select>
+          </>
+        )}
 
         <label htmlFor="channel" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
           접수 경로

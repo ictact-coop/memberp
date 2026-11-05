@@ -8,6 +8,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   no_subject: "계정에 연결된 사람 정보가 없어 수정할 수 없습니다.",
   invalid_region: "선택한 지역을 확인할 수 없습니다.",
   invalid_expertise_tag: "선택한 전문영역·관심 중 확인할 수 없는 값이 있습니다.",
+  already_requested: "이미 탈퇴를 신청했습니다.",
 };
 
 interface ContactInfo {
@@ -186,6 +187,49 @@ export default async function MyProfilePage({
           </form>
         </>
       )}
+
+      <h2 style={{ fontSize: 16, marginTop: 24 }}>탈퇴</h2>
+      <div className="card">
+        {active.account.withdrawalRequestedAt ? (
+          <>
+            <p style={{ margin: 0 }}>
+              {active.account.withdrawalRequestedAt.toISOString().slice(0, 10)}에 탈퇴를
+              신청했습니다. 관리자가 확인 중입니다 — 처리 전까지는 신청을 취소할 수 있습니다.
+            </p>
+            {active.account.withdrawalRequestReason && (
+              <p style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
+                신청 사유: {active.account.withdrawalRequestReason}
+              </p>
+            )}
+            <form method="POST" action="/api/profile/cancel-withdrawal-request" style={{ marginTop: 10 }}>
+              <button type="submit" className="btn-outline" style={{ padding: "8px 14px", fontSize: 14 }}>
+                탈퇴 신청 취소
+              </button>
+            </form>
+          </>
+        ) : (
+          <>
+            <p style={{ fontSize: 13, color: "var(--color-text-muted)", marginTop: 0 }}>
+              조합을 탈퇴하고 싶으면 신청하세요. 신청만으로 바로 탈퇴되지는 않습니다 — 관리자가
+              확인한 뒤 처리합니다.
+            </p>
+            <form method="POST" action="/api/profile/request-withdrawal">
+              <label htmlFor="withdrawReason" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+                사유 (선택)
+              </label>
+              <textarea
+                id="withdrawReason"
+                name="reason"
+                rows={2}
+                style={{ width: "100%", padding: 8, fontSize: 14, marginBottom: 10 }}
+              />
+              <button type="submit" className="btn-outline" style={{ padding: "8px 14px", fontSize: 14 }}>
+                탈퇴 신청
+              </button>
+            </form>
+          </>
+        )}
+      </div>
     </section>
   );
 }

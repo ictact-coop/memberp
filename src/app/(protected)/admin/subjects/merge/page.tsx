@@ -2,6 +2,8 @@ import Link from "next/link";
 import { requireRole } from "@/lib/auth/roles";
 import { prisma } from "@/lib/prisma";
 import { countSubjectReferences } from "@/lib/subject-merge";
+import { findSimilarPairs } from "@/lib/text-similarity";
+import { MergeSuggestions } from "@/components/MergeSuggestions";
 
 const ERROR_MESSAGES: Record<string, string> = {
   invalid: "합칠 사람 두 명을 모두 선택하세요.",
@@ -46,6 +48,7 @@ export default async function MergeSubjectsPage({
   const effectiveError = error ?? previewError ?? undefined;
 
   const counts = source && target ? await countSubjectReferences(prisma, source.id) : null;
+  const suggestedPairs = findSimilarPairs(people, (p) => p.name);
 
   const accountLabel = (person: (typeof people)[number]) =>
     person.account ? person.account.email ?? person.account.phone ?? "있음" : "없음";
@@ -106,47 +109,54 @@ export default async function MergeSubjectsPage({
           </form>
         </>
       ) : (
-        <form method="GET" action="/admin/subjects/merge" className="card">
-          <label htmlFor="sourceId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
-            병합할 사람 (없앨 쪽 — 보관 처리됨)
-          </label>
-          <select
-            id="sourceId"
-            name="sourceId"
-            required
-            style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
-          >
-            <option value="">선택하세요</option>
-            {people.map((person) => (
-              <option key={person.id} value={person.id}>
-                {person.displayId} · {person.name}
-                {person.region ? ` (${person.region})` : ""} · 계정: {accountLabel(person)}
-              </option>
-            ))}
-          </select>
+        <>
+          <MergeSuggestions
+            pairs={suggestedPairs}
+            renderLabel={(p) => `${p.displayId} · ${p.name}`}
+            buildHref={(a, b) => `/admin/subjects/merge?sourceId=${a.id}&targetId=${b.id}`}
+          />
+          <form method="GET" action="/admin/subjects/merge" className="card">
+            <label htmlFor="sourceId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+              병합할 사람 (없앨 쪽 — 보관 처리됨)
+            </label>
+            <select
+              id="sourceId"
+              name="sourceId"
+              required
+              style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
+            >
+              <option value="">선택하세요</option>
+              {people.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.displayId} · {person.name}
+                  {person.region ? ` (${person.region})` : ""} · 계정: {accountLabel(person)}
+                </option>
+              ))}
+            </select>
 
-          <label htmlFor="targetId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
-            합칠 대상 (남길 쪽)
-          </label>
-          <select
-            id="targetId"
-            name="targetId"
-            required
-            style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 16 }}
-          >
-            <option value="">선택하세요</option>
-            {people.map((person) => (
-              <option key={person.id} value={person.id}>
-                {person.displayId} · {person.name}
-                {person.region ? ` (${person.region})` : ""} · 계정: {accountLabel(person)}
-              </option>
-            ))}
-          </select>
+            <label htmlFor="targetId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+              합칠 대상 (남길 쪽)
+            </label>
+            <select
+              id="targetId"
+              name="targetId"
+              required
+              style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 16 }}
+            >
+              <option value="">선택하세요</option>
+              {people.map((person) => (
+                <option key={person.id} value={person.id}>
+                  {person.displayId} · {person.name}
+                  {person.region ? ` (${person.region})` : ""} · 계정: {accountLabel(person)}
+                </option>
+              ))}
+            </select>
 
-          <button type="submit" style={{ padding: "10px 16px", fontSize: 16 }}>
-            다음 (미리보기)
-          </button>
-        </form>
+            <button type="submit" style={{ padding: "10px 16px", fontSize: 16 }}>
+              다음 (미리보기)
+            </button>
+          </form>
+        </>
       )}
     </section>
   );

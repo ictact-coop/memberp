@@ -210,6 +210,7 @@ enum AuditAction {
   CONFIRM
   ARCHIVE
   EXPORT
+  IMPORT
 }
 
 enum SystemOfRecord {
@@ -321,6 +322,12 @@ model Account {
   lastLoginAt DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
+
+  // FR-01/개인정보 자기결정권: 본인이 탈퇴를 신청한 시각·사유. 신청만으로
+  // status가 바뀌지는 않는다 — 실제 탈퇴 처리(WITHDRAWN)는 관리자가
+  // /admin/accounts에서 확정해야 한다(아래 "본인 탈퇴 신청" 절 참고).
+  withdrawalRequestedAt DateTime?
+  withdrawalRequestReason String?
 
   permissionGrants  PermissionGrant[]
   notifications     Notification[]
@@ -472,6 +479,15 @@ model Need {
   closeType   NeedCloseType?
   closeReason String?
 
+  // v0.1 §3.1: "종결 후 새 요청은 원본을 참조하는 새 필요로 만든다" — 종결된
+  // 상담·수요를 고치는 게 아니라(그건 수정 화면 몫), 새로 들어온 요청이 예전
+  // 종결 건과 이어져 있음을 남기는 참조다. 정정 이력(Activity/Contribution의
+  // revisionOfId)과 달리 원본을 대체하지 않는다 — 둘 다 독립된 현재 기록으로
+  // 남는다.
+  followsUpOnNeedId String?
+  followsUpOn       Need?   @relation("NeedFollowUp", fields: [followsUpOnNeedId], references: [id])
+  followUps         Need[]  @relation("NeedFollowUp")
+
   sourceUrl  String?
   legacyId   String?
   visibility Visibility @default(TEAM)
@@ -525,6 +541,14 @@ model Activity {
   managerAccountId   String
   organizerSubjectId String?
   organizerSubject   Subject? @relation("ActivityOrganizerSubject", fields: [organizerSubjectId], references: [id])
+
+  // 결재 위임(v0.1 §4.10 권한표: "준비 승인"의 결재 권한자를 책임자와 분리할 수
+  // 있어야 한다) — 비워두면 지금까지처럼 책임자 본인이 승인·반려까지 처리한다.
+  // 채워두면 PENDING_APPROVAL 상태의 승인·반려는 이 계정만 할 수 있고, 책임자
+  // 본인은(자기 결재를 막기 위해) 할 수 없다. 다른 전이(승인 요청·시작·종료 등)는
+  // 여전히 책임자 몫이다. 관리자.accountId 필드들과 같은 원칙으로 Account를
+  // Prisma 관계가 아니라 문자열로만 참조한다.
+  approverAccountId String?
 
   status     ActivityStatus @default(PLANNING)
   visibility Visibility     @default(TEAM)
