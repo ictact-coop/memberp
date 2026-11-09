@@ -25,6 +25,9 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL: postgresql://memberp:memberp@localhost:5432/memberp?schema=public
+      # prisma migrate deploy/status가 요구하는 값 — 풀러 없이 바로 붙으므로
+      # DATABASE_URL과 같다("Vercel 배포(Supabase)" 절 참고).
+      DIRECT_URL: postgresql://memberp:memberp@localhost:5432/memberp?schema=public
       APP_BASE_URL: http://localhost:3000
       TOTP_ENCRYPTION_KEY: fR06UrZkQgd2AbGKkxOZJ0idHRWhpHISn7IhI1nM3fI=
     steps:

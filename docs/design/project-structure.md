@@ -1497,32 +1497,80 @@ Vercel에서 그대로 두면 깨진다 — 이번에 고친 지점이다.
   (`RateLimitAttempt`)도 Redis 없이 Postgres 테이블 하나로 처리하므로 추가
   인프라가 필요 없다. 세션 쿠키의 `secure` 플래그는 `NODE_ENV==="production"`
   기준이라 Vercel 프로덕션 배포에서 자동으로 켜진다.
+- **`DATABASE_URL`·`DIRECT_URL` 두 값이 필요하다**: Supabase·Neon처럼
+  커넥션 풀러(Supavisor/PgBouncer)를 앞에 두는 서비스는, 풀러의 트랜잭션
+  모드가 마이그레이션이 쓰는 장기 세션·advisory lock을 지원하지 않는다 —
+  그래서 Prisma CLI(`migrate deploy` 등)는 풀러를 거치지 않는 직접 연결
+  (`DIRECT_URL`)을 쓰고, 앱이 실제 쿼리를 보낼 때 쓰는 `@prisma/client`는
+  풀러 주소(`DATABASE_URL`)를 쓰도록 `schema.prisma`에 `directUrl`을
+  추가했다. 로컬·Docker처럼 풀러가 없는 환경은 둘을 같은 값으로 두면 된다
+  (`.env.example`·`docker-compose.yml`·CI 모두 이미 그렇게 해 뒀다). 실제로
+  `prisma generate`는 `DIRECT_URL`이 없어도 되지만 `migrate deploy`/`migrate
+  status`는 없으면 즉시 거부함을 이 세션에서 직접 확인했다 — 왜 두 값이
+  엄격히 구분되는지 보여준다.
+
+### Supabase를 쓴다면: `DATABASE_URL`·`DIRECT_URL`에 정확히 뭘 넣는가
+
+Supabase 프로젝트 설정의 "Connect" 패널에 연결 문자열이 세 종류 있다 —
+직접 연결(포트 5432, `db.<project-ref>.supabase.co`), Transaction 풀러
+(포트 6543), Session 풀러(포트 5432, 둘 다 `*.pooler.supabase.com`). 셀 중
+무엇을 넣어야 하는지가 헷갈리기 쉬운데, Vercel에 올릴 때는 이렇게 고정된다:
+
+- **`DATABASE_URL` = Transaction 풀러(6543) + `?pgbouncer=true`**:
+  `postgresql://postgres.<project-ref>:<비밀번호>@<풀러 호스트>:6543/postgres
+  ?pgbouncer=true`. Vercel 함수(서버리스)는 요청마다 커넥션을 새로 열 수
+  있어 짧고 많은 연결에 맞는 트랜잭션 모드가 맞다. `pgbouncer=true`는
+  Prisma에게 "이 연결은 prepared statement를 못 쓴다"고 알려주는 플래그다.
+- **`DIRECT_URL` = Session 풀러(5432, 풀러 호스트)**: 직접 연결
+  (`db.<project-ref>.supabase.co`)이 아니라 **풀러 호스트의 5432 포트**를
+  쓴다 — Supabase 무료/기본 플랜에서 직접 연결 주소는 IPv6로만 응답하는데,
+  Vercel의 빌드·함수 실행 환경은 IPv4만 지원한다(유료 "IPv4 add-on"을 따로
+  켜지 않는 한). 풀러 호스트는 Session 모드든 Transaction 모드든 IPv4를
+  지원하므로, 포트만 5432로 바꿔서 그대로 쓰면 이 문제를 아예 피할 수 있다.
+  `vercel.json`의 빌드 명령이 이 값으로 `prisma migrate deploy`를 실행한다.
+- **둘 다 "Connect" 패널에서 복사**해서 `<project-ref>`·`<풀러 호스트>`·
+  비밀번호를 손으로 맞추기보다, 드롭다운에서 "Transaction"/"Session"을
+  각각 고른 뒤 그 화면이 보여주는 문자열을 그대로 쓰는 쪽이 안전하다 —
+  리전별로 풀러 호스트 이름(`aws-0-<region>.pooler.supabase.com`)이 달라
+  손으로 재구성하면 오타가 나기 쉽다.
+- 로컬 개발 DB(Postgres 직접 설치)나 Docker Compose처럼 풀러가 없는
+  환경에서는 이 구분이 필요 없다 — `DATABASE_URL`과 `DIRECT_URL`을 같은
+  가치로 두면 된다(`.env.example` 기본값이 이미 그렇다).
 
 ### 배포 절차(조합이 직접 할 일)
 
-1. **DB 준비**: Neon이나 Supabase 등에서 Postgres를 하나 만들고 연결 문자열을
-   받는다(둘 다 서버리스 환경에 맞춘 커넥션 풀링을 지원해 Vercel과 잘 맞는다).
+1. **DB 준비**: Neon이나 Supabase 등에서 Postgres를 하나 만든다. Supabase라면
+   바로 위 절대로 `DATABASE_URL`(Transaction 풀러)·`DIRECT_URL`(Session
+   풀러) 두 문자열을 챙긴다.
 2. **Vercel 프로젝트 생성**: vercel.com에서 이 GitHub 저장소를 연결한다 —
    `vercel.json`이 있어 빌드 명령은 자동으로 잡힌다.
 3. **환경변수 설정**(Vercel 프로젝트 설정 → Environment Variables):
-   `DATABASE_URL`(1번 값), `APP_BASE_URL`(배포될 주소, 예:
+   `DATABASE_URL`·`DIRECT_URL`(1번 값), `APP_BASE_URL`(배포될 주소, 예:
    `https://메인도메인.vercel.app`), `TOTP_ENCRYPTION_KEY`(`openssl rand
    -base64 32`), `RESEND_API_KEY`·`EMAIL_FROM`, `ATTACHMENT_STORAGE_DRIVER=s3`
    와 `ATTACHMENT_S3_*`/`AWS_*`(S3 호환 버킷 — AWS S3·Cloudflare R2·Supabase
    Storage 등).
 4. **첫 배포 후 최초 관리자 초대**: 서버에 직접 접속할 수 없으므로
    `npx tsx prisma/bootstrap-admin.ts you@example.org`를 **로컬 컴퓨터에서**
-   `DATABASE_URL`을 1번 값으로 바꿔 실행한다 — 이 스크립트는 초대장만 만들고
-   끝나므로(ADR-0002), 운영 서버 프로세스에 접속할 필요가 없다.
+   `DATABASE_URL`을 1번 값(Supabase라면 Session 풀러나 직접 연결 — 로컬
+   컴퓨터는 IPv4 제약이 없어 둘 다 된다)으로 바꿔 실행한다 — 이 스크립트는
+   초대장만 만들고 끝나므로(ADR-0002), 운영 서버 프로세스에 접속할 필요가
+   없다.
 - **정직하게 남겨둔 것**: 이 샌드박스에는 Vercel·Neon/Supabase 계정이 없어
-  실제 배포·실제 외부 Postgres 연결까지는 확인하지 못했다. 대신 확인한 것:
-  `VERCEL=1`로 `next build`를 실행하면 `.next/standalone`이 안 생기고(Vercel이
-  기대하는 모양), `VERCEL`을 안 주면 그대로 생김(Docker가 기대하는 모양)을
-  둘 다 실제로 빌드해 확인; `vercel.json`의 빌드 명령 전체(`prisma generate
-  && prisma migrate deploy && next build`)를 완전히 빈 로컬 PostgreSQL
-  DB(마이그레이션 0건 상태)에 대해 그대로 실행해, 11개 마이그레이션이 전부
-  적용되고 빌드가 끝까지 성공함을 확인(검증용 DB는 이후 삭제함) — 실제
-  첫 배포가 겪을 상황과 똑같다.
+  실제 배포·실제 외부 Postgres(풀러 포함) 연결까지는 확인하지 못했다. 대신
+  확인한 것: `VERCEL=1`로 `next build`를 실행하면 `.next/standalone`이 안
+  생기고(Vercel이 기대하는 모양), `VERCEL`을 안 주면 그대로 생김(Docker가
+  기대하는 모양)을 둘 다 실제로 빌드해 확인; `vercel.json`의 빌드 명령
+  전체(`prisma generate && prisma migrate deploy && next build`)를 완전히
+  빈 로컬 PostgreSQL DB(마이그레이션 0건 상태)에 대해 그대로 실행해, 11개
+  마이그레이션이 전부 적용되고 빌드가 끝까지 성공함을 확인(검증용 DB는
+  이후 삭제함) — 실제 첫 배포가 겪을 상황과 똑같다; `directUrl` 추가
+  이후에는 `DIRECT_URL`이 없을 때 `prisma generate`(영향 없음)와 `prisma
+  migrate deploy`/`migrate status`(즉시 거부)가 서로 다르게 반응함을, 그리고
+  `@prisma/client` 런타임(`new PrismaClient()`로 실제 쿼리 실행)은
+  `DIRECT_URL`과 전혀 무관하게 동작함을 각각 실제로 실행해 확인했다 — 왜
+  `app` 서비스(Docker)·Vercel 함수 런타임에는 `DIRECT_URL`을 안 넣어도
+  되는지의 근거다.
 
 ## CI (GitHub Actions, `.github/workflows/ci.yml`)
 
