@@ -1,4 +1,10 @@
 {
   "buildCommand": "npx prisma generate && npx prisma migrate deploy && next build",
-  "regions": ["hnd1"]
+  "regions": ["hnd1"],
+  "crons": [
+    {
+      "path": "/api/cron/keep-alive",
+      "schedule": "17 3 * * *"
+    }
+  ]
 }

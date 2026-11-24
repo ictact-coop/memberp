@@ -436,6 +436,17 @@ model RateLimitAttempt {
   @@map("rate_limit_attempts")
 }
 
+// Supabase 무료 플랜은 DB에 실제 쓰기(단순 연결/조회만으로는 안 됨)가 1주일
+// 넘게 없으면 프로젝트를 일시정지한다. Vercel Cron(/api/cron/keep-alive)이
+// 매일 이 행 하나를 upsert해서 "활동 있음"으로 인식되게 한다 — row는 항상
+// 1개(id가 고정값)만 유지된다.
+model SystemHeartbeat {
+  id       String   @id
+  pingedAt DateTime @updatedAt
+
+  @@map("system_heartbeats")
+}
+
 // v0.1 §4.10 "권한 부여 DB": 역할·담당 범위·기간·승인자
 model PermissionGrant {
   id                 String         @id @default(uuid())
