@@ -8,3 +8,7 @@ next-env.d.ts
 *.log
 *.tsbuildinfo
 /storage/
+
+# 비밀번호 등을 직접 채워 로컬에서만 실행하는 임시 스크립트 (커밋 금지)
+bootstrap.sh
+*.local.sh
