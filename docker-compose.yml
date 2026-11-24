@@ -5,8 +5,9 @@
 #   docker compose up -d --build
 #   docker compose run --rm migrate npx tsx prisma/bootstrap-admin.ts you@example.org   # 최초 관리자 부트스트랩(선택)
 #
-# DATABASE_URL과 ATTACHMENT_STORAGE_DIR은 컨테이너 내부 경로를 쓰므로
-# .env의 값(로컬 실행용 localhost 기준)과 무관하게 이 파일에서 직접 고정한다.
+# DATABASE_URL·DIRECT_URL과 ATTACHMENT_STORAGE_DIR은 컨테이너 내부 경로를
+# 쓰므로 .env의 값(로컬 실행용 localhost 기준)과 무관하게 이 파일에서 직접
+# 고정한다.
 
 services:
   db:
@@ -33,6 +34,9 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgresql://memberp:memberp@db:5432/memberp?schema=public
+      # Prisma CLI(migrate deploy)가 요구하는 값 — 풀러 없이 Postgres에 바로
+      # 붙으므로 DATABASE_URL과 같다("Vercel 배포(Supabase)" 절 참고).
+      DIRECT_URL: postgresql://memberp:memberp@db:5432/memberp?schema=public
     command: ["npx", "prisma", "migrate", "deploy"]
 
   app:

@@ -32,8 +32,9 @@ Postgres를 직접 설치하지 않고 컨테이너로 실행하려면:
 ```bash
 cp .env.example .env
 # TOTP_ENCRYPTION_KEY를 반드시 채운다: openssl rand -base64 32
-# (RESEND_API_KEY·EMAIL_FROM·APP_BASE_URL도 필요시 채운다 — DATABASE_URL은
-#  docker-compose.yml이 컨테이너 내부 주소로 직접 고정하므로 무시된다)
+# (RESEND_API_KEY·EMAIL_FROM·APP_BASE_URL도 필요시 채운다 — DATABASE_URL·
+#  DIRECT_URL은 docker-compose.yml이 컨테이너 내부 주소로 직접 고정하므로
+#  무시된다)
 
 docker compose up -d --build
 # app: 3000 포트, db: postgres:16 (볼륨에 데이터 보존)

@@ -11,8 +11,15 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Supabase 등 커넥션 풀러(Supavisor/PgBouncer)를 쓰는 배포에서만 의미가 있다.
+  // 풀러는 트랜잭션 모드에서 prepared statement·장기 세션(마이그레이션이 쓰는
+  // advisory lock 등)을 지원하지 않으므로, CLI 명령(migrate 등)은 이 직접
+  // 연결 주소를 쓰고 Prisma Client(런타임 쿼리)는 위 url(풀러 주소)을 쓴다.
+  // 풀러를 안 쓰는 로컬·Docker 배포는 DIRECT_URL을 DATABASE_URL과 같은 값으로
+  // 두면 된다("Vercel 배포(Supabase)" 절 참고).
+  directUrl = env("DIRECT_URL")
 }
 
 // ─────────────────────────────────────────────────────────────
