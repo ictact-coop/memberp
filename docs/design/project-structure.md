@@ -1508,6 +1508,14 @@ Vercel에서 그대로 두면 깨진다 — 이번에 고친 지점이다.
   `prisma generate`는 `DIRECT_URL`이 없어도 되지만 `migrate deploy`/`migrate
   status`는 없으면 즉시 거부함을 이 세션에서 직접 확인했다 — 왜 두 값이
   엄격히 구분되는지 보여준다.
+- **함수 리전을 DB와 같은 지역으로 고정해야 한다**: `regions` 설정이 없으면
+  Vercel 함수는 기본 리전(미국 동부, `iad1`)에서 실행된다. Supabase DB를
+  도쿄(`ap-northeast-1`, 풀러 호스트가 `aws-0-ap-northeast-1.pooler.supabase.com`
+  형태)에 만들었다면, 요청마다 미국 동부↔도쿄를 왕복하는 지연이 그대로
+  쌓여 체감 응답 속도가 느려진다. `vercel.json`에 `"regions": ["hnd1"]`
+  (도쿄)을 지정해 DB와 같은 지역에서 함수가 실행되게 했다 — Hobby 플랜도
+  리전 1개는 직접 고를 수 있다. DB를 다른 리전에 만들었다면 그 리전에 맞는
+  코드로 바꿔야 한다.
 
 ### Supabase를 쓴다면: `DATABASE_URL`·`DIRECT_URL`에 정확히 뭘 넣는가
 
