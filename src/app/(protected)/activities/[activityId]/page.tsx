@@ -14,6 +14,8 @@ import {
   availableActivityTransitions,
 } from "@/lib/activity-status";
 import { ATTACHMENT_MAX_SIZE_BYTES } from "@/lib/attachment-storage";
+import { TASK_STATUS_BADGE_TONE, TASK_STATUS_LABELS } from "@/lib/task-labels";
+import { TASK_TRANSITION_LABELS, availableTaskTransitions } from "@/lib/task-status";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +32,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   attachment_required: "첨부할 파일을 선택하세요.",
   attachment_too_large: `첨부파일은 ${Math.floor(ATTACHMENT_MAX_SIZE_BYTES / 1024 / 1024)}MB 이하만 가능합니다.`,
   attachment_type: "이미지(JPEG/PNG/WEBP/GIF) 또는 PDF만 첨부할 수 있습니다.",
+  invalid_task: "업무 제목을 입력하세요.",
+  invalid_assignee: "선택한 담당자 계정을 확인할 수 없습니다.",
 };
 
 // 활동 상세 — FR-04, FR-05(참여 신청·배치)
@@ -60,6 +64,7 @@ export default async function ActivityDetailPage({
       revisionOf: { select: { id: true, displayId: true, title: true } },
       revisions: { select: { id: true, displayId: true, title: true } },
       classifications: { include: { classification: true } },
+      tasks: { orderBy: { createdAt: "desc" } },
     },
   });
 
@@ -119,6 +124,27 @@ export default async function ActivityDetailPage({
         orderBy: { label: "asc" },
       })
     : [];
+
+  // 업무 담당자 선택형·표시용 라벨. 선택형은 활성 계정만 보여주고, 표시는
+  // (비활성화된 뒤에도 알아볼 수 있게) 이미 배정된 담당자까지 함께 조회한다.
+  const assignableAccounts = isManager
+    ? await prisma.account.findMany({
+        where: { status: "ACTIVE" },
+        orderBy: { email: "asc" },
+        select: { id: true, email: true, phone: true },
+      })
+    : [];
+  const assignedAccountIds = Array.from(
+    new Set(activity.tasks.map((task) => task.assigneeAccountId).filter((id): id is string => id !== null)),
+  );
+  const assigneeAccounts =
+    isManager && assignedAccountIds.length > 0
+      ? await prisma.account.findMany({
+          where: { id: { in: assignedAccountIds } },
+          select: { id: true, email: true, phone: true },
+        })
+      : [];
+  const assigneeLabelById = new Map(assigneeAccounts.map((a) => [a.id, a.email ?? a.phone ?? a.id]));
 
   return (
     <section>
@@ -277,6 +303,115 @@ export default async function ActivityDetailPage({
           </form>
         )}
       </div>
+
+      {isManager && (
+        <>
+          <h2 style={{ fontSize: 16, marginTop: 24 }}>업무 ({activity.tasks.length})</h2>
+          {activity.tasks.length === 0 ? (
+            <p style={{ color: "var(--color-text-muted)" }}>등록된 업무가 없습니다.</p>
+          ) : (
+            <ul className="card-list">
+              {activity.tasks.map((task) => (
+                <li key={task.id} className="card">
+                  <div style={{ fontSize: 12, color: "var(--color-text-muted)" }}>{task.displayId}</div>
+                  <div style={{ fontWeight: 600, margin: "2px 0" }}>
+                    {task.title}{" "}
+                    <span className={`badge ${TASK_STATUS_BADGE_TONE[task.status]}`}>
+                      {TASK_STATUS_LABELS[task.status]}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
+                    담당: {task.assigneeAccountId ? assigneeLabelById.get(task.assigneeAccountId) ?? "알 수 없음" : "미배정"}
+                    {task.dueDate && ` · 기한: ${task.dueDate.toISOString().slice(0, 10)}`}
+                  </div>
+                  {task.description && (
+                    <p style={{ fontSize: 13, margin: "6px 0 0" }}>{task.description}</p>
+                  )}
+                  {task.cancelReason && (
+                    <p style={{ fontSize: 12, color: "var(--color-text-muted)", margin: "4px 0 0" }}>
+                      취소 사유: {task.cancelReason}
+                    </p>
+                  )}
+                  {availableTaskTransitions(task.status).length > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 8 }}>
+                      {availableTaskTransitions(task.status).map((transitionAction) => (
+                        <form key={transitionAction} method="POST" action={`/api/tasks/${task.id}/transition`}>
+                          <input type="hidden" name="action" value={transitionAction} />
+                          {transitionAction === "cancel" && (
+                            <input
+                              type="text"
+                              name="reason"
+                              placeholder="취소 사유"
+                              required
+                              style={{ fontSize: 12, padding: "2px 6px", marginRight: 4 }}
+                            />
+                          )}
+                          <button type="submit" style={{ fontSize: 12, padding: "2px 8px" }}>
+                            {TASK_TRANSITION_LABELS[transitionAction]}
+                          </button>
+                        </form>
+                      ))}
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {!isLocked && (
+            <form method="POST" action={`/api/activities/${activity.id}/tasks/create`} className="card">
+              <label htmlFor="task-title" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+                새 업무 제목
+              </label>
+              <input
+                id="task-title"
+                name="title"
+                required
+                style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
+              />
+
+              <label htmlFor="task-description" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+                설명(선택)
+              </label>
+              <textarea
+                id="task-description"
+                name="description"
+                rows={2}
+                style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
+              />
+
+              <label htmlFor="assigneeAccountId" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+                담당자(선택)
+              </label>
+              <select
+                id="assigneeAccountId"
+                name="assigneeAccountId"
+                style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 12 }}
+              >
+                <option value="">미배정</option>
+                {assignableAccounts.map((account) => (
+                  <option key={account.id} value={account.id}>
+                    {account.email ?? account.phone}
+                  </option>
+                ))}
+              </select>
+
+              <label htmlFor="task-dueDate" style={{ display: "block", fontSize: 14, marginBottom: 4 }}>
+                기한(선택)
+              </label>
+              <input
+                id="task-dueDate"
+                name="dueDate"
+                type="date"
+                style={{ width: "100%", padding: 10, fontSize: 16, marginBottom: 16 }}
+              />
+
+              <button type="submit" style={{ padding: "10px 16px", fontSize: 16 }}>
+                업무 등록
+              </button>
+            </form>
+          )}
+        </>
+      )}
 
       {activity.childActivities.length > 0 && (
         <>

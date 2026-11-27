@@ -151,6 +151,13 @@ enum AssignmentStatus {
   CANCELLED
 }
 
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
 // 유급/무급동의/혼합분리필요/미확인
 enum CompensationBasis {
   PAID
@@ -640,6 +647,7 @@ model Activity {
   assignments     ActivityAssignment[]
   contributions   Contribution[]
   classifications ActivityClassification[]
+  tasks           Task[]
 
   @@map("activities")
 }
@@ -736,6 +744,40 @@ model Contribution {
   @@index([contributorSubjectId, performedDate])
   @@index([activityId, status])
   @@map("contributions")
+}
+
+// v1.0 §4 "의사결정: 안건 → 회의·결정 → 담당 업무 → 이행 확인" / FR-14(R2)의
+// "업무" 조각. 참여 배치(ActivityAssignment, "누가 참여하는가")와 달리 그
+// 활동 안에서 처리해야 할 구체적인 할 일(담당자·기한·상태)을 추적한다.
+// 결정(Decision)은 아직 없어 activityId를 필수로 둔다 — 결정이 생기면 그때
+// decisionId를 추가하고 "활동 또는 결정 중 하나"식 제약을 다시 검토한다
+// (Contribution의 activity/need xor 체크와 같은 자리). 담당자는 다른
+// 책임자류 필드(Activity.managerAccountId 등)와 같은 원칙으로 Account를
+// Prisma 관계가 아니라 문자열로만 참조한다. 지금은 관리 권한을 그 활동의
+// 책임자(managerAccountId)로만 한정한다 — 담당자 본인이 스스로 상태를 바꾸는
+// 것은 범위 밖으로 남겨둔다("아직 없는 것" 참고).
+model Task {
+  id         String   @id @default(uuid())
+  displayId  String   @unique
+  activityId String
+  activity   Activity @relation(fields: [activityId], references: [id])
+
+  title       String
+  description String?
+
+  assigneeAccountId String?
+  dueDate           DateTime?
+  status            TaskStatus @default(OPEN)
+  completedAt       DateTime?
+  cancelReason      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  @@index([activityId, status])
+  @@map("tasks")
 }
 
 // ─────────────────────────────────────────────────────────────
