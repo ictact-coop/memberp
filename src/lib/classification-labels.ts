@@ -4,13 +4,19 @@ import type { Prisma } from "@prisma/client";
 // 조회표로 R1 스키마 설계 때부터 있었지만 처음엔 아무 화면도 쓰지 않았다.
 // ACTIVITY_SERVICE는 `ActivityClassification`(활동 ↔ 분류, 진짜 외래키 기반
 // N:M)이 이미 예정해 둔 도메인을 채운 것이다 — "분류 관리·병합" 화면 절 참고.
-export const CLASSIFICATION_DOMAINS = ["REGION", "EXPERTISE", "ACTIVITY_SERVICE"] as const;
+export const CLASSIFICATION_DOMAINS = [
+  "REGION",
+  "EXPERTISE",
+  "ACTIVITY_SERVICE",
+  "RELATIONSHIP_TYPE",
+] as const;
 export type ClassificationDomain = (typeof CLASSIFICATION_DOMAINS)[number];
 
 export const CLASSIFICATION_DOMAIN_LABELS: Record<ClassificationDomain, string> = {
   REGION: "지역",
   EXPERTISE: "전문영역·관심",
   ACTIVITY_SERVICE: "활동 서비스 분류",
+  RELATIONSHIP_TYPE: "관계 유형",
 };
 
 export function isClassificationDomain(value: string): value is ClassificationDomain {

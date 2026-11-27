@@ -11,12 +11,13 @@ export interface SubjectMergeCounts {
   contributions: number;
   orgUnitPermissionGrants: number;
   linkedAccounts: number;
+  relationships: number;
 }
 
 export async function countSubjectReferences(
   prisma: Pick<
     PrismaClient,
-    "need" | "activity" | "activityAssignment" | "contribution" | "permissionGrant" | "account"
+    "need" | "activity" | "activityAssignment" | "contribution" | "permissionGrant" | "account" | "relationship"
   >,
   subjectId: string,
 ): Promise<SubjectMergeCounts> {
@@ -28,6 +29,8 @@ export async function countSubjectReferences(
     contributions,
     orgUnitPermissionGrants,
     linkedAccounts,
+    relationshipsFrom,
+    relationshipsTo,
   ] = await Promise.all([
     prisma.need.count({ where: { raisedBySubjectId: subjectId } }),
     prisma.need.count({ where: { beneficiarySubjectId: subjectId } }),
@@ -36,6 +39,8 @@ export async function countSubjectReferences(
     prisma.contribution.count({ where: { contributorSubjectId: subjectId } }),
     prisma.permissionGrant.count({ where: { scopeType: "ORG_UNIT", scopeId: subjectId } }),
     prisma.account.count({ where: { subjectId } }),
+    prisma.relationship.count({ where: { fromSubjectId: subjectId } }),
+    prisma.relationship.count({ where: { toSubjectId: subjectId } }),
   ]);
   return {
     raisedNeeds,
@@ -45,6 +50,7 @@ export async function countSubjectReferences(
     contributions,
     orgUnitPermissionGrants,
     linkedAccounts,
+    relationships: relationshipsFrom + relationshipsTo,
   };
 }
 
@@ -75,4 +81,10 @@ export async function reassignSubjectReferences(
     where: { scopeType: "ORG_UNIT", scopeId: sourceId },
     data: { scopeId: targetId },
   });
+  await tx.relationship.updateMany({ where: { fromSubjectId: sourceId }, data: { fromSubjectId: targetId } });
+  await tx.relationship.updateMany({ where: { toSubjectId: sourceId }, data: { toSubjectId: targetId } });
+  // source가 target과 이미 관계를 맺고 있었다면 위 두 줄로 자기 자신을 가리키는
+  // 행이 생긴다(예: source→target 관계가 target→target이 됨) — 의미 없는
+  // 자기참조이므로 정리한다.
+  await tx.relationship.deleteMany({ where: { fromSubjectId: targetId, toSubjectId: targetId } });
 }

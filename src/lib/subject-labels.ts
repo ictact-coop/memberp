@@ -1,4 +1,4 @@
-import type { SubjectStatus } from "@prisma/client";
+import type { SubjectStatus, SubjectType } from "@prisma/client";
 
 // v0.1 P01: 활동 상태(활성/휴면/종료/확인필요)는 조합원 자격과는 별개다.
 export const SUBJECT_STATUS_LABELS: Record<SubjectStatus, string> = {
@@ -6,4 +6,11 @@ export const SUBJECT_STATUS_LABELS: Record<SubjectStatus, string> = {
   DORMANT: "휴면",
   CLOSED: "종료",
   NEEDS_CONFIRMATION: "확인 필요",
+};
+
+export const SUBJECT_TYPE_LABELS: Record<SubjectType, string> = {
+  PERSON: "사람",
+  ORGANIZATION: "법인·외부단체",
+  TEAM: "내부팀",
+  ORG_UNIT: "자치기구",
 };

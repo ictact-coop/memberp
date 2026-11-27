@@ -244,6 +244,7 @@ model Classification {
   active Boolean @default(true)
 
   activityLinks ActivityClassification[]
+  relationships Relationship[]
 
   @@unique([domain, code])
   @@map("classifications")
@@ -308,8 +309,41 @@ model Subject {
   raisedNeeds         Need[]               @relation("NeedRaisedBySubject")
   beneficiaryOfNeeds  Need[]               @relation("NeedBeneficiarySubject")
   organizedActivities Activity[]           @relation("ActivityOrganizerSubject")
+  relationshipsFrom   Relationship[]       @relation("RelationshipFromSubject")
+  relationshipsTo     Relationship[]       @relation("RelationshipToSubject")
 
   @@map("subjects")
+}
+
+// v1.0 §7 "관계" / FR-13(R2): 사람·단체 사이의 소속·협력 등 관계. 한쪽이 다른
+// 쪽에 대해 갖는 관계이므로 from/to로 방향을 둔다(예: from=사람, 관계유형=소속,
+// to=단체) — 상호관계는 양쪽에서 각각 한 행씩 만들면 된다. 관계 "유형"은
+// Classification(domain="RELATIONSHIP_TYPE")을 참조해, 지역·전문영역과 같은
+// 방식으로 조합이 직접 늘리고 병합할 수 있게 한다(classification-labels.ts
+// 참고). "복수 소속·유효기간"은 같은 두 주체 사이에 여러 행(기간이 겹치거나
+// 끝난 것 포함)을 허용하는 것으로 표현한다 — 유일 제약을 두지 않는다.
+model Relationship {
+  id               String        @id @default(uuid())
+  fromSubjectId    String
+  toSubjectId      String
+  classificationId String
+  role             String?
+  startDate        DateTime      @default(now())
+  endDate          DateTime?
+  note             String?
+
+  fromSubject    Subject        @relation("RelationshipFromSubject", fields: [fromSubjectId], references: [id])
+  toSubject      Subject        @relation("RelationshipToSubject", fields: [toSubjectId], references: [id])
+  classification Classification @relation(fields: [classificationId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+
+  @@index([fromSubjectId])
+  @@index([toSubjectId])
+  @@map("relationships")
 }
 
 // 계정(로그인 자격)과 사람은 별개다 — v1.0 §3

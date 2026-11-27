@@ -88,6 +88,7 @@ export default async function MergeSubjectsPage({
               <li>주최한 활동: {counts.organizedActivities}건</li>
               <li>참여 배정: {counts.activityAssignments}건</li>
               <li>기여: {counts.contributions}건</li>
+              <li>관계(소속·협력 등): {counts.relationships}건</li>
               <li>연결된 로그인 계정: {counts.linkedAccounts}개</li>
             </ul>
             <p style={{ fontSize: 12, color: "var(--color-text-muted)" }}>
