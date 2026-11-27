@@ -70,7 +70,9 @@ export default async function SubjectsPage({
                 {subject.displayId}
                 {subject.archivedAt && " · 보관됨(병합으로 사라짐)"}
               </div>
-              <div style={{ fontWeight: 600, margin: "2px 0" }}>{subject.name}</div>
+              <div style={{ fontWeight: 600, margin: "2px 0" }}>
+                <Link href={`/admin/subjects/${subject.id}`}>{subject.name}</Link>
+              </div>
               <div style={{ fontSize: 13, color: "var(--color-text-muted)" }}>
                 {SUBJECT_STATUS_LABELS[subject.status]}
                 {subject.region && ` · ${subject.region}`}

@@ -180,6 +180,9 @@ export default async function OrgUnitsPage({
                 <Link href={`/admin/org-units/${orgUnit.id}/edit`} style={{ fontSize: 13 }}>
                   정보 수정
                 </Link>
+                <Link href={`/admin/subjects/${orgUnit.id}`} style={{ fontSize: 13 }}>
+                  관계 보기
+                </Link>
                 <form method="POST" action={`/api/admin/org-units/${orgUnit.id}/archive`}>
                   <button type="submit" style={{ fontSize: 13, padding: "4px 10px" }}>
                     보관하기
